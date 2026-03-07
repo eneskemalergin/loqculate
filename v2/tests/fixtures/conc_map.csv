@@ -1,0 +1,7 @@
+filename,concentration
+sample_blank.raw,0.0
+sample_0p5.raw,0.5
+sample_1.raw,1.0
+sample_2.raw,2.0
+sample_5.raw,5.0
+sample_10.raw,10.0

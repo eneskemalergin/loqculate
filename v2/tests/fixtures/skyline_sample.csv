@@ -1,0 +1,13 @@
+File Name,Peptide Sequence,Total Area Fragment
+sample_blank.raw,PEPTIDEA,480
+sample_0p5.raw,PEPTIDEA,3050
+sample_1.raw,PEPTIDEA,5300
+sample_2.raw,PEPTIDEA,10100
+sample_5.raw,PEPTIDEA,25500
+sample_10.raw,PEPTIDEA,50200
+sample_blank.raw,PEPTIDEB,510
+sample_0p5.raw,PEPTIDEB,2980
+sample_1.raw,PEPTIDEB,5150
+sample_2.raw,PEPTIDEB,10250
+sample_5.raw,PEPTIDEB,25300
+sample_10.raw,PEPTIDEB,49800

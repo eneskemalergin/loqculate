@@ -1,0 +1,3 @@
+Protein.Group	Protein.Ids	Protein.Names	Genes	First.Protein.Description	Proteotypic	Stripped.Sequence	Modified.Sequence	Precursor.Charge	Precursor.Id	sample_blank.raw	sample_0p5.raw	sample_1.raw	sample_2.raw	sample_5.raw	sample_10.raw
+ProtA	ProtA	ProtA	GENA	Desc	1	PEPTIDEA	PEPTIDEA	1	PEPTIDEA.1	480	3050	5300	10100	25500	50200
+ProtB	ProtB	ProtB	GENB	Desc	1	PEPTIDEB	PEPTIDEB	2	PEPTIDEB.2	510	2980	5150	10250	25300	49800
