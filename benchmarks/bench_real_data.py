@@ -1,4 +1,4 @@
-"""bench_real_data.py — v1 vs v2 one-to-one comparison on the real demo dataset.
+"""bench_real_data.py — original vs loqculate one-to-one comparison on the real demo dataset.
 
 Data: data/demo/one_protein.csv  (27 peptides, PMA1_YEAST, 42 samples)
 
@@ -9,21 +9,21 @@ Agreement glossary
   agree(N%)   both finite, |\u0394%| \u2264 tolerance
   diverge(N%) both finite, |\u0394%| > tolerance
   both=inf    both versions return inf (consistent detection failure)
-  split:v2=\u221e  v1 finite, v2 inf  \u2014 v2 is more conservative
-  split:v1=\u221e  v2 finite, v1 inf  \u2014 v2 found LOQ that v1 missed
+  split:new=\u221e  orig finite, new inf  \u2014 loqculate is more conservative
+  split:orig=\u221e  new finite, orig inf  \u2014 loqculate found LOQ that the original missed
 
 LOQ split causes
 ----------------
-  v2 requires *window* consecutive grid points ALL \u2264 cv_thresh (default: 3).
-  v1 takes the minimum x where any SINGLE point has CV < cv_thresh.
+  loqculate requires *window* consecutive grid points ALL \u2264 cv_thresh (default: 3).
+  The original takes the minimum x where any SINGLE point has CV < cv_thresh.
 
-  split:v2=\u221e  The CV momentarily dips below the threshold at 1-2 isolated
-                points, which v1 accepts, but v2's sliding window rejects as
-                non-sustained (likely a CV bounce, not true quantitation).
+  split:new=\u221e  The CV momentarily dips below the threshold at 1-2 isolated
+                points, which the original accepts, but loqculate's sliding window
+                rejects as non-sustained (likely a CV bounce, not true quantitation).
 
-  split:v1=\u221e  Same LOD on both sides, but v1's bootstrap never achieves
-                sub-threshold CV while v2's does. Root cause: TRF (v2) and
-                Levenberg-Marquardt (v1) produce different per-replicate fits
+  split:orig=\u221e  Same LOD on both sides, but the original bootstrap never achieves
+                sub-threshold CV while loqculate's does. Root cause: TRF (loqculate) and
+                Levenberg-Marquardt (original) produce different per-replicate fits
                 for resampled data, leading to different aggregate CV profiles.
 
 Run from the repository root::
@@ -31,10 +31,12 @@ Run from the repository root::
     python benchmarks/bench_real_data.py
     python benchmarks/bench_real_data.py --bootreps 10   # quick check
     python benchmarks/bench_real_data.py --lod_tol 0.30  # relax LOD agreement
+    python benchmarks/bench_real_data.py --n_reps 1      # single-pass (no CI)
 """
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 import time
 import warnings
@@ -44,9 +46,9 @@ import numpy as np
 
 # --- path setup ---------------------------------------------------------
 sys.path.insert(0, str(Path(__file__).parent))   # allow _helpers import
-from _helpers import DEMO_DATA, DEMO_MAP, load_v1_calc
+from _helpers import DEMO_DATA, DEMO_MAP, load_original_calc, _json_safe, _ci95
 
-# v2 path already added by _helpers import
+# loqculate path already added by _helpers import
 from loqculate.models import PiecewiseWLS
 from loqculate.io import read_calibration_data
 
@@ -56,7 +58,7 @@ from loqculate.io import read_calibration_data
 # -----------------------------------------------------------------------
 
 def _parse_args():
-    p = argparse.ArgumentParser(description='v1 vs v2 on real demo data')
+    p = argparse.ArgumentParser(description='original vs loqculate on real demo data')
     p.add_argument('--bootreps', type=int, default=100,
                    help='Bootstrap replicates (default: 100)')
     p.add_argument('--std_mult', type=float, default=2.0)
@@ -65,6 +67,10 @@ def _parse_args():
                    help='Relative tolerance for LOD "agree" classification (default: 0.20 = 20%%)')
     p.add_argument('--loq_tol', type=float, default=0.50,
                    help='Relative tolerance for LOQ "agree" classification (default: 0.50 = 50%%)')
+    p.add_argument('--save', type=str, default=None, metavar='PATH',
+                   help='Write JSON results to PATH (e.g. tmp/results/bench_real_data.json)')
+    p.add_argument('--n_reps', type=int, default=5,
+                   help='Timing repetitions per implementation for CI estimation (default: 5)')
     return p.parse_args()
 
 
@@ -73,7 +79,7 @@ def _parse_args():
 # -----------------------------------------------------------------------
 
 def _load_real_peptides() -> dict[str, tuple[np.ndarray, np.ndarray]]:
-    """Read demo data through v2 reader; return {peptide: (x, y)} dict."""
+    """Read demo data through the loqculate reader; return {peptide: (x, y)} dict."""
     data = read_calibration_data(str(DEMO_DATA), str(DEMO_MAP))
     out: dict[str, tuple[np.ndarray, np.ndarray]] = {}
     for pep in np.unique(data.peptide):
@@ -82,7 +88,7 @@ def _load_real_peptides() -> dict[str, tuple[np.ndarray, np.ndarray]]:
     return out
 
 
-def _run_v2(peptides: dict, bootreps: int, std_mult: float, cv_thresh: float):
+def _run_loqculate(peptides: dict, bootreps: int, std_mult: float, cv_thresh: float):
     """Return (results_dict, elapsed, models_dict). models kept for split diagnostics."""
     results, models = {}, {}
     t0 = time.perf_counter()
@@ -100,10 +106,10 @@ def _run_v2(peptides: dict, bootreps: int, std_mult: float, cv_thresh: float):
     return results, time.perf_counter() - t0, models
 
 
-def _run_v1(v1_mod, peptides: dict, bootreps: int, std_mult: float, cv_thresh: float):
-    """Run v1 process_peptide() on each real peptide.
+def _run_original(orig_mod, peptides: dict, bootreps: int, std_mult: float, cv_thresh: float):
+    """Run original process_peptide() on each real peptide.
 
-    v1 process_peptide signature:
+    original process_peptide signature:
       (bootreps, cv_thresh, output_dir, peptide, plot_or_not, std_mult,
        min_noise_points, min_linear_points, subset_df, verbose, model_choice)
     """
@@ -122,7 +128,7 @@ def _run_v1(v1_mod, peptides: dict, bootreps: int, std_mult: float, cv_thresh: f
             with warnings.catch_warnings():
                 warnings.simplefilter('ignore')
                 try:
-                    row_df = v1_mod.process_peptide(
+                    row_df = orig_mod.process_peptide(
                         bootreps, cv_thresh, tmpdir, pep,
                         'n', std_mult, 2, 1, subset, 'n', 'piecewise')
                     row = row_df.iloc[0].to_dict()
@@ -139,27 +145,27 @@ def _run_v1(v1_mod, peptides: dict, bootreps: int, std_mult: float, cv_thresh: f
 # Agreement classification
 # -----------------------------------------------------------------------
 
-def _classify(v1_val: float, v2_val: float, tol: float) -> str:
-    """Short category label for a (v1, v2) value pair."""
-    f1, f2 = np.isfinite(v1_val), np.isfinite(v2_val)
+def _classify(orig_val: float, new_val: float, tol: float) -> str:
+    """Short category label for an (orig, new) value pair."""
+    f1, f2 = np.isfinite(orig_val), np.isfinite(new_val)
     if not f1 and not f2:
         return 'both=inf'
     if f1 and not f2:
-        return 'split:v2=inf'
+        return 'split:new=inf'
     if not f1 and f2:
-        return 'split:v1=inf'
-    denom = max(abs(v1_val), abs(v2_val))
-    rdiff = abs(v2_val - v1_val) / denom if denom > 0 else 0.0
+        return 'split:orig=inf'
+    denom = max(abs(orig_val), abs(new_val))
+    rdiff = abs(new_val - orig_val) / denom if denom > 0 else 0.0
     if rdiff <= tol:
         return f'agree({rdiff*100:.0f}%)'
     return f'diverge({rdiff*100:.0f}%)'
 
 
-def _rdiff_pct(v1_val: float, v2_val: float) -> float:
-    if np.isfinite(v1_val) and np.isfinite(v2_val):
-        denom = max(abs(v1_val), abs(v2_val))
+def _rdiff_pct(orig_val: float, new_val: float) -> float:
+    if np.isfinite(orig_val) and np.isfinite(new_val):
+        denom = max(abs(orig_val), abs(new_val))
         if denom > 0:
-            return 100.0 * (v2_val - v1_val) / denom
+            return 100.0 * (new_val - orig_val) / denom
     return float('nan')
 
 
@@ -167,21 +173,21 @@ def _rdiff_pct(v1_val: float, v2_val: float) -> float:
 # Main results table
 # -----------------------------------------------------------------------
 
-def _print_table(peptides, v1_res, v2_res, lod_tol, loq_tol):
+def _print_table(peptides, orig_res, new_res, lod_tol, loq_tol):
     peps = sorted(peptides)
     pw = max(len(p) for p in peps) + 1  # dynamic peptide column width
 
     def _fmt(v):  return f'{v:.3e}' if np.isfinite(v) else '    inf'
     def _fmtd(v): return f'{v:+.1f}%' if np.isfinite(v) else '     —'
 
-    hdr = (f'{"Peptide":<{pw}} {"v1 LOD":>9} {"v2 LOD":>9} {"\u0394%":>7}  '
-           f'{"v1 LOQ":>9} {"v2 LOQ":>9} {"\u0394%":>7}  {"LOD status":<15} {"LOQ status":<16}')
+    hdr = (f'{"Peptide":<{pw}} {"orig LOD":>9} {"lq LOD":>9} {"\u0394%":>7}  '
+           f'{"orig LOQ":>9} {"lq LOQ":>9} {"\u0394%":>7}  {"LOD status":<15} {"LOQ status":<16}')
     sep = '-' * len(hdr)
     print(f'\n{hdr}\n{sep}')
 
     lod_cats, loq_cats = {}, {}
     for pep in peps:
-        r1, r2 = v1_res.get(pep, {}), v2_res.get(pep, {})
+        r1, r2 = orig_res.get(pep, {}), new_res.get(pep, {})
         l1, l2 = r1.get('lod', np.inf), r2.get('lod', np.inf)
         q1, q2 = r1.get('loq', np.inf), r2.get('loq', np.inf)
         lc = _classify(l1, l2, lod_tol)
@@ -199,8 +205,14 @@ def _print_table(peptides, v1_res, v2_res, lod_tol, loq_tol):
 # Summary counts
 # -----------------------------------------------------------------------
 
-def _print_summary(lod_cats, loq_cats, v1_res, v2_res, lod_tol, loq_tol, t_v1, t_v2, n):
+def _print_summary(lod_cats, loq_cats, orig_res, new_res, lod_tol, loq_tol,
+                   orig_t_runs, new_t_runs, n):
     from collections import Counter
+
+    t_orig = float(np.mean(orig_t_runs))
+    t_new  = float(np.mean(new_t_runs))
+    orig_ci = _ci95(orig_t_runs)
+    new_ci  = _ci95(new_t_runs)
 
     def _count(cats):
         c = Counter()
@@ -222,12 +234,12 @@ def _print_summary(lod_cats, loq_cats, v1_res, v2_res, lod_tol, loq_tol, t_v1, t
     print(f'  {"-"*47}')
     print(f'  {"Total":<35} {n:>5}  {n:>5}')
 
-    lod_d = [abs(_rdiff_pct(v1_res.get(p, {}).get('lod', np.inf),
-                             v2_res.get(p, {}).get('lod', np.inf)))
+    lod_d = [abs(_rdiff_pct(orig_res.get(p, {}).get('lod', np.inf),
+                             new_res.get(p, {}).get('lod', np.inf)))
               for p, c in lod_cats.items()
               if not c.startswith('both') and not c.startswith('split')]
-    loq_d = [abs(_rdiff_pct(v1_res.get(p, {}).get('loq', np.inf),
-                             v2_res.get(p, {}).get('loq', np.inf)))
+    loq_d = [abs(_rdiff_pct(orig_res.get(p, {}).get('loq', np.inf),
+                             new_res.get(p, {}).get('loq', np.inf)))
               for p, c in loq_cats.items()
               if not c.startswith('both') and not c.startswith('split')]
     if lod_d:
@@ -237,11 +249,15 @@ def _print_summary(lod_cats, loq_cats, v1_res, v2_res, lod_tol, loq_tol, t_v1, t
         print(f'  LOQ both-finite: n={len(loq_d)},  mean|\u0394|={np.mean(loq_d):.1f}%,  '
               f'max|\u0394|={max(loq_d):.1f}%')
 
-    print(f'\n  Timing')
-    print(f'  v1  {t_v1:.2f}s  ({t_v1/n*1000:.1f} ms/peptide)')
-    print(f'  v2  {t_v2:.2f}s  ({t_v2/n*1000:.1f} ms/peptide)')
-    spd = t_v1 / t_v2 if t_v2 > 0 else float('nan')
-    print(f'  {spd:.2f}x  ({"v2 faster" if spd > 1 else "v1 faster"})')
+    print(f'\n  Timing  ({len(orig_t_runs)} rep(s) each)')
+    def _fmt_t(mean, ci):
+        if ci > 0:
+            return f'{mean:.2f} ± {ci:.2f} s  ({mean/n*1000:.1f} ms/peptide)'
+        return f'{mean:.2f} s  ({mean/n*1000:.1f} ms/peptide)'
+    print(f'  orig  {_fmt_t(t_orig, orig_ci)}')
+    print(f'  lq    {_fmt_t(t_new, new_ci)}')
+    spd = t_orig / t_new if t_new > 0 else float('nan')
+    print(f'  {spd:.2f}x  ({"lq faster" if spd > 1 else "orig faster"})')
 
 
 # -----------------------------------------------------------------------
@@ -260,7 +276,7 @@ def _max_consecutive_below(arr: np.ndarray, thresh: float) -> int:
     return max_run
 
 
-def _diagnose_splits(peptides, v1_res, v2_res, v2_models, loq_cats, cv_thresh, window):
+def _diagnose_splits(peptides, orig_res, new_res, new_models, loq_cats, cv_thresh, window):
     """Print a per-peptide explanation for every LOQ split."""
     splits = [(p, loq_cats[p]) for p in sorted(peptides)
               if loq_cats[p].startswith('split')]
@@ -272,12 +288,12 @@ def _diagnose_splits(peptides, v1_res, v2_res, v2_models, loq_cats, cv_thresh, w
     print(f'  LOQ Split Diagnostics   ({len(splits)} peptides where exactly one side is inf)')
     print(f'{"=" * 72}')
     print(f'\n  LOQ RULES COMPARED')
-    print(f'  v1: first x > LOD where ANY single bootstrap grid point has CV < {cv_thresh}')
-    print(f'  v2: first x > LOD where {window} CONSECUTIVE grid points ALL have CV <= {cv_thresh}')
-    print(f'  (v2 sliding window prevents false LOQs from non-monotonic CV bounces)\n')
+    print(f'  original : first x > LOD where ANY single bootstrap grid point has CV < {cv_thresh}')
+    print(f'  loqculate: first x > LOD where {window} CONSECUTIVE grid points ALL have CV <= {cv_thresh}')
+    print(f'  (loqculate sliding window prevents false LOQs from non-monotonic CV bounces)\n')
 
     for pep, cat in splits:
-        r1, r2 = v1_res.get(pep, {}), v2_res.get(pep, {})
+        r1, r2 = orig_res.get(pep, {}), new_res.get(pep, {})
         l1  = r1.get('lod', np.inf)
         l2  = r2.get('lod', np.inf)
         q1  = r1.get('loq', np.inf)
@@ -288,17 +304,17 @@ def _diagnose_splits(peptides, v1_res, v2_res, v2_models, loq_cats, cv_thresh, w
         q2s = f'{q2:.3e}' if np.isfinite(q2) else 'inf'
 
         print(f'  [{pep}]')
-        print(f'    LOD: v1={l1s}  v2={l2s}')
-        print(f'    LOQ: v1={q1s}  v2={q2s}')
+        print(f'    LOD: orig={l1s}  lq={l2s}')
+        print(f'    LOQ: orig={q1s}  lq={q2s}')
 
-        m = v2_models.get(pep)
+        m = new_models.get(pep)
         if m is None or m._boot_summary is None:
-            if cat == 'split:v2=inf' and np.isfinite(l1) and not np.isfinite(l2):
-                print(f'    v2 LOD=inf → bootstrap never ran.')
+            if cat == 'split:new=inf' and np.isfinite(l1) and not np.isfinite(l2):
+                print(f'    loqculate LOD=inf \u2192 bootstrap never ran.')
                 print(f'    \u2192 Cause: TRF optimizer gave no valid noise/linear intersection here;'
-                      f' v1 LM did.')
+                      f' original LM did.')
             else:
-                print(f'    v2 bootstrap not available (likely LOD was inf).')
+                print(f'    loqculate bootstrap not available (likely LOD was inf).')
             print()
             continue
 
@@ -308,7 +324,7 @@ def _diagnose_splits(peptides, v1_res, v2_res, v2_models, loq_cats, cv_thresh, w
         n_below  = int(np.sum(np.isfinite(cv2) & (cv2 <= cv_thresh)))
         max_run  = _max_consecutive_below(cv2, cv_thresh)
 
-        print(f'    v2 bootstrap CV profile:')
+        print(f'    loqculate bootstrap CV profile:')
         print(f'      Grid: {len(cv2)} pts from {xg2[0]:.3e} to {xg2[-1]:.3e}')
         print(f'      min CV = {min_cv:.3f}   pts <= {cv_thresh}: {n_below}/{len(cv2)}   '
               f'longest run: {max_run} (need {window})')
@@ -326,26 +342,26 @@ def _diagnose_splits(peptides, v1_res, v2_res, v2_models, loq_cats, cv_thresh, w
                 mark = ' <-- window met' if run_count >= window else (' <-- below thresh' if below else '')
                 print(f'        x={xg2[i]:.3e}  CV={cv2[i]:.3f}{mark}')
 
-        if cat == 'split:v2=inf':
+        if cat == 'split:new=inf':
             if min_cv > cv_thresh:
-                print(f'    \u2192 Cause: v2 TRF bootstrap produces HIGHER CV everywhere than v1 LM.')
+                print(f'    \u2192 Cause: loqculate TRF bootstrap produces HIGHER CV everywhere than original LM.')
                 print(f'      Different per-replicate fits (TRF vs LM on resampled data) lead to')
-                print(f'      a wider bootstrap band in v2 \u2192 CV never dips below {cv_thresh}.')
-                print(f'      v1 accepts the first point below threshold; v2 finds none.')
+                print(f'      a wider bootstrap band in loqculate \u2192 CV never dips below {cv_thresh}.')
+                print(f'      Original accepts the first point below threshold; loqculate finds none.')
             else:
-                print(f'    \u2192 Cause: v2 SLIDING WINDOW too strict for this peptide.')
+                print(f'    \u2192 Cause: loqculate SLIDING WINDOW too strict for this peptide.')
                 print(f'      CV dips below {cv_thresh} at {n_below} isolated point(s)')
                 print(f'      (max run = {max_run}), but never for {window} consecutive points.')
-                print(f'      v1 grabs the first dip; v2 waits for sustained low CV.')
-        else:  # split:v1=inf
+                print(f'      Original grabs the first dip; loqculate waits for sustained low CV.')
+        else:  # split:orig=inf
             if not np.isfinite(l1):
-                print(f'    \u2192 Cause: v1 LOD=inf (LM gave no valid intersection).')
-                print(f'      v2 LOD={l2s} finite \u2192 its bootstrap ran \u2192 found LOQ.')
+                print(f'    \u2192 Cause: original LOD=inf (LM gave no valid intersection).')
+                print(f'      loqculate LOD={l2s} finite \u2192 its bootstrap ran \u2192 found LOQ.')
             else:
-                print(f'    \u2192 Cause: Same LOD, but v1 bootstrap CV stays >= {cv_thresh} everywhere.')
-                print(f'      v2 TRF produces slightly tighter per-replicate fits on resampled')
+                print(f'    \u2192 Cause: Same LOD, but original bootstrap CV stays >= {cv_thresh} everywhere.')
+                print(f'      loqculate TRF produces slightly tighter per-replicate fits on resampled')
                 print(f'      data \u2192 lower prediction spread \u2192 lower CV \u2192 {max_run}-point run')
-                print(f'      below threshold \u2192 v2 finds LOQ where v1 cannot.')
+                print(f'      below threshold \u2192 loqculate finds LOQ where original cannot.')
         print()
 
 
@@ -356,28 +372,98 @@ def _diagnose_splits(peptides, v1_res, v2_res, v2_models, loq_cats, cv_thresh, w
 
 def main():
     args = _parse_args()
-    print('Loading v1 module ...')
-    v1 = load_v1_calc()
+    print('Loading original module ...')
+    orig = load_original_calc()
 
     print(f'Reading demo data ({DEMO_DATA.name}) ...')
     peptides = _load_real_peptides()
     print(f'  {len(peptides)} peptides.')
 
-    print(f'\nRunning v2  (bootreps={args.bootreps}) ...')
-    v2_res, t_v2, v2_models = _run_v2(peptides, args.bootreps, args.std_mult, args.cv_thresh)
+    print(f'\nRunning loqculate  (bootreps={args.bootreps}) ...')
+    orig_t_runs: list = []
+    new_t_runs: list = []
+    new_res, t_new, new_models = _run_loqculate(
+        peptides, args.bootreps, args.std_mult, args.cv_thresh)
+    new_t_runs.append(t_new)
+    print(f'  rep  1/{args.n_reps}: {t_new:.2f}s')
+    for i in range(1, args.n_reps):
+        _, t, _ = _run_loqculate(peptides, args.bootreps, args.std_mult, args.cv_thresh)
+        new_t_runs.append(t)
+        print(f'  rep {i+1:2d}/{args.n_reps}: {t:.2f}s')
 
-    print(f'Running v1  (bootreps={args.bootreps}) ...')
-    v1_res, t_v1 = _run_v1(v1, peptides, args.bootreps, args.std_mult, args.cv_thresh)
+    print(f'Running original  (bootreps={args.bootreps}) ...')
+    orig_res, t_orig = _run_original(
+        orig, peptides, args.bootreps, args.std_mult, args.cv_thresh)
+    orig_t_runs.append(t_orig)
+    print(f'  rep  1/{args.n_reps}: {t_orig:.2f}s')
+    for i in range(1, args.n_reps):
+        _, t = _run_original(orig, peptides, args.bootreps, args.std_mult, args.cv_thresh)
+        orig_t_runs.append(t)
+        print(f'  rep {i+1:2d}/{args.n_reps}: {t:.2f}s')
 
     n = len(peptides)
     print(f'\n{"=" * 72}')
     print(f'  One-to-one comparison: {DEMO_DATA.name}  ({n} peptides)')
     print(f'{"=" * 72}')
-    lod_cats, loq_cats = _print_table(peptides, v1_res, v2_res, args.lod_tol, args.loq_tol)
-    _print_summary(lod_cats, loq_cats, v1_res, v2_res,
-                   args.lod_tol, args.loq_tol, t_v1, t_v2, n)
-    _diagnose_splits(peptides, v1_res, v2_res, v2_models, loq_cats,
+    lod_cats, loq_cats = _print_table(peptides, orig_res, new_res, args.lod_tol, args.loq_tol)
+    _print_summary(lod_cats, loq_cats, orig_res, new_res,
+                   args.lod_tol, args.loq_tol, orig_t_runs, new_t_runs, n)
+    _diagnose_splits(peptides, orig_res, new_res, new_models, loq_cats,
                      args.cv_thresh, window=3)
+
+    if args.save:
+        import datetime
+        from collections import Counter
+
+        def _cat_counts(cats):
+            c = Counter()
+            for v in cats.values():
+                if   v.startswith('agree'):   c['agree'] += 1
+                elif v.startswith('diverge'): c['diverge'] += 1
+                elif v == 'both=inf':         c['both_inf'] += 1
+                else:                         c['split'] += 1
+            return dict(c)
+
+        per_pep = {}
+        for pep in sorted(peptides):
+            r1, r2 = orig_res.get(pep, {}), new_res.get(pep, {})
+            per_pep[pep] = {
+                'orig_lod':      r1.get('lod', None),
+                'lq_lod':        r2.get('lod', None),
+                'orig_loq':      r1.get('loq', None),
+                'lq_loq':        r2.get('loq', None),
+                'lod_category':  lod_cats.get(pep, ''),
+                'loq_category':  loq_cats.get(pep, ''),
+            }
+        results = {
+            'meta': {
+                'bootreps':   args.bootreps,
+                'std_mult':   args.std_mult,
+                'cv_thresh':  args.cv_thresh,
+                'lod_tol':    args.lod_tol,
+                'loq_tol':    args.loq_tol,
+                'n_peptides': n,
+                'dataset':    DEMO_DATA.name,
+                't_orig_runs_s':  orig_t_runs,
+                't_new_runs_s':   new_t_runs,
+                't_orig_mean_s':  float(np.mean(orig_t_runs)),
+                't_new_mean_s':   float(np.mean(new_t_runs)),
+                't_orig_ci95_s':  _ci95(orig_t_runs),
+                't_new_ci95_s':   _ci95(new_t_runs),
+                'n_reps':     args.n_reps,
+                'timestamp':  datetime.datetime.now().isoformat(),
+            },
+            'per_peptide': per_pep,
+            'summary': {
+                'lod': _cat_counts(lod_cats),
+                'loq': _cat_counts(loq_cats),
+            },
+        }
+        out = Path(args.save)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        with open(out, 'w') as f:
+            json.dump(_json_safe(results), f, indent=2)
+        print(f'Results saved → {out}')
 
 
 if __name__ == '__main__':

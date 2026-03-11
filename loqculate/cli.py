@@ -1,4 +1,4 @@
-"""Unified CLI entry-point for loqculate v2.
+"""Unified CLI entry-point for loqculate.
 
 Usage examples
 --------------
@@ -81,7 +81,7 @@ def _process_chunk(
 
 def _run_fit(args: argparse.Namespace) -> None:
     data = read_calibration_data(args.curve_data, args.filename_concentration_map,
-                                 fmt=args.format)
+                                fmt=args.format)
 
     if args.multiplier_file:
         data = apply_multiplier(data, args.multiplier_file)
@@ -131,7 +131,7 @@ def _run_fit(args: argparse.Namespace) -> None:
             ]
 
             for future in tqdm(as_completed(futures), total=len(futures),
-                               desc='processing peptides'):
+                                desc='processing peptides'):
                 try:
                     for row in future.result():
                         write_row(row)
@@ -174,7 +174,7 @@ def _run_compare(args: argparse.Namespace) -> None:
     from loqculate.models import MODEL_REGISTRY
 
     data = read_calibration_data(args.curve_data, args.filename_concentration_map,
-                                 fmt=args.format)
+                                fmt=args.format)
     if args.multiplier_file:
         data = apply_multiplier(data, args.multiplier_file)
 
@@ -212,7 +212,7 @@ def _run_compare(args: argparse.Namespace) -> None:
 
         if args.plot == 'y' and fitted_models:
             plot_model_comparison(fitted_models, x, y, peptide_name=str(pep),
-                                  output_path=output_dir)
+                                output_path=output_dir)
 
     sys.stdout.write(f'Comparison plots written to {output_dir}\n')
 
@@ -226,7 +226,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     parser = argparse.ArgumentParser(
         prog='loqculate',
-        description='loqculate v2: fit LOD/LOQ calibration curves.',
+        description='loqculate: fit LOD/LOQ calibration curves.',
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument('--version', action='version', version=f'%(prog)s {__version__}')

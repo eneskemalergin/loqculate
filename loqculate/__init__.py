@@ -1,5 +1,5 @@
-# loqculate v2 package
-__version__ = '2.0.0'
+# loqculate package
+__version__ = '0.2.0'
 
 from loqculate.models import PiecewiseWLS, EmpiricalCV, MODEL_REGISTRY
 from loqculate.io import CalibrationData, read_calibration_data

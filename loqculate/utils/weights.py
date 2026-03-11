@@ -5,7 +5,7 @@ from loqculate.config import DEFAULT_WEIGHT_CAP
 def inverse_sqrt_weights(x: np.ndarray, cap: float = DEFAULT_WEIGHT_CAP) -> np.ndarray:
     """Return WLS weights w_i = min(1 / (sqrt(x_i) + eps), cap).
 
-    This is the same scheme used in v1.  Centralising it here allows the cap
+    This is the same scheme used in the original implementation.  Centralising it here allows the cap
     to be tuned from the CLI without touching model code.
 
     Parameters

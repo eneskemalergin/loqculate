@@ -1,4 +1,4 @@
-"""Shared path constants and module loaders for the cross-version benchmark suite.
+"""Shared path constants and module loaders for the benchmark suite.
 
 Repository layout assumed:
     loqculate/
@@ -11,11 +11,11 @@ Repository layout assumed:
     │   └── full/
     │       ├── dataSearchedTogether1ng-PinoFormat.csv
     │       └── metadata_dataSearchedTogether1ng-PinoFormat.csv
-    ├── v1/
+    ├── old/              ← original Pino implementation (reference)
     │   ├── calculate-loq.py
     │   └── loq_by_cv.py
-    └── v2/
-        └── loqculate/   ← the v2 package
+    ├── loqculate/        ← main package source code
+    └── tests/            ← package unit tests
 """
 from __future__ import annotations
 
@@ -40,41 +40,97 @@ DEMO_MULT = DEMO / "multiplier_file.csv"
 FULL_DATA = FULL / "dataSearchedTogether1ng-PinoFormat.csv"
 FULL_MAP  = FULL / "metadata_dataSearchedTogether1ng-PinoFormat.csv"
 
-V1_DIR = ROOT / "v1"
-V2_DIR = ROOT / "v2"
+OLD_DIR = ROOT / "old"
 
 
-def _ensure_v2_on_path() -> None:
-    """Insert v2/ into sys.path so that `import loqculate` resolves to v2."""
-    v2 = str(V2_DIR)
-    if v2 not in sys.path:
-        sys.path.insert(0, v2)
+def _ensure_package_on_path() -> None:
+    """Insert the repo root into sys.path so that `import loqculate` resolves correctly."""
+    root = str(ROOT)
+    if root not in sys.path:
+        sys.path.insert(0, root)
 
 
-def load_v1_calc() -> Any:
-    """Import v1/calculate-loq.py as a module without altering the file.
+def load_original_calc() -> Any:
+    """Import old/calculate-loq.py as a module without altering the file.
 
     Returns the module object; call its functions directly, e.g.::
 
-        v1 = load_v1_calc()
-        df = v1.read_input(str(DEMO_DATA), str(DEMO_MAP))
-        row = v1.process_peptide(100, 0.2, '/tmp', pep, 'n', 2, 2, 1, subset, 'n', 'piecewise')
+        orig = load_original_calc()
+        df = orig.read_input(str(DEMO_DATA), str(DEMO_MAP))
+        row = orig.process_peptide(100, 0.2, '/tmp', pep, 'n', 2, 2, 1, subset, 'n', 'piecewise')
     """
-    path = V1_DIR / "calculate-loq.py"
-    spec = importlib.util.spec_from_file_location("v1_calc", path)
+    path = OLD_DIR / "calculate-loq.py"
+    spec = importlib.util.spec_from_file_location("original_calc", path)
     mod  = importlib.util.module_from_spec(spec)  # type: ignore[arg-type]
     spec.loader.exec_module(mod)                   # type: ignore[union-attr]
     return mod
 
 
-def load_v1_cv() -> Any:
-    """Import v1/loq_by_cv.py as a module."""
-    path = V1_DIR / "loq_by_cv.py"
-    spec = importlib.util.spec_from_file_location("v1_cv", path)
+def load_original_cv() -> Any:
+    """Import old/loq_by_cv.py as a module."""
+    path = OLD_DIR / "loq_by_cv.py"
+    spec = importlib.util.spec_from_file_location("original_cv", path)
     mod  = importlib.util.module_from_spec(spec)  # type: ignore[arg-type]
     spec.loader.exec_module(mod)                   # type: ignore[union-attr]
     return mod
 
 
-# Make v2 importable as soon as this helper is imported
-_ensure_v2_on_path()
+# Make loqculate importable as soon as this helper is imported
+_ensure_package_on_path()
+
+
+# ---------------------------------------------------------------------------
+# JSON serialisation helper (shared by all benchmark scripts)
+# ---------------------------------------------------------------------------
+
+def _json_safe(obj):
+    """Recursively convert *obj* to a JSON-serialisable form.
+
+    * numpy integers / floats are cast to Python int / float.
+    * Non-finite floats (inf, nan) — both Python and numpy — become ``None``.
+    * numpy arrays are converted via ``tolist()``.
+    * dicts and lists are processed element-wise.
+    """
+    import math
+    if isinstance(obj, dict):
+        return {k: _json_safe(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_json_safe(v) for v in obj]
+    if isinstance(obj, float):
+        return None if not math.isfinite(obj) else obj
+    try:
+        import numpy as _np
+        if isinstance(obj, _np.integer):
+            return int(obj)
+        if isinstance(obj, _np.floating):
+            return None if not _np.isfinite(obj) else float(obj)
+        if isinstance(obj, _np.ndarray):
+            return _json_safe(obj.tolist())
+    except ImportError:
+        pass
+    return obj
+
+
+# ---------------------------------------------------------------------------
+# Timing statistics helpers (shared by bench_scale, bench_real_data, …)
+# ---------------------------------------------------------------------------
+
+def _ci95(runs) -> float:
+    """95% CI half-width: 2 × SEM.  Returns 0.0 for a single observation."""
+    import numpy as _np
+    arr = list(runs)
+    if len(arr) < 2:
+        return 0.0
+    return 2.0 * float(_np.std(arr, ddof=1)) / (len(arr) ** 0.5)
+
+
+def _timing_stats(runs) -> dict:
+    """Return a dict of wall-time statistics from a list of floats (seconds).
+
+    Keys: ``runs``, ``mean``, ``std``, ``ci95``.
+    """
+    import numpy as _np
+    arr = list(runs)
+    mean = float(_np.mean(arr))
+    std  = float(_np.std(arr, ddof=1)) if len(arr) > 1 else 0.0
+    return {'runs': arr, 'mean': mean, 'std': std, 'ci95': _ci95(arr)}

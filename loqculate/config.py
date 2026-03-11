@@ -1,5 +1,5 @@
-# Configuration constants for loqculate v2.
-# Centralizes every magic number from v1 into one place.
+# Configuration constants for loqculate.
+# Centralizes every configurable value in one place.
 
 DEFAULT_STD_MULT = 2            # multiplier of noise std for LOD
 DEFAULT_CV_THRESH = 0.2         # 20 % CV threshold for LOQ

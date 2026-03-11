@@ -17,7 +17,7 @@ class EmpiricalCV(CalibrationModel):
     each concentration level, computes CV = std/mean, and applies the same
     sliding-window threshold search used by :class:`PiecewiseWLS`.
 
-    It is a v2 port of ``v1/loq_by_cv.py`` into the base-class contract.
+    It is a reimplementation of the original ``loq_by_cv.py`` in the base-class contract.
 
     Parameters
     ----------
@@ -153,7 +153,7 @@ class EmpiricalCV(CalibrationModel):
     def loq(self, cv_thresh: float = DEFAULT_CV_THRESH) -> float:
         """Return LOQ using a sliding-window CV threshold search.
 
-        Blanks (concentration = 0) are excluded per v1 convention.
+        Blanks (concentration = 0) are excluded (LOQ physically cannot be zero concentration).
         """
         self._check_is_fitted()
 

@@ -1,4 +1,4 @@
-"""Shared pytest fixtures for loqculate v2 tests."""
+"""Shared pytest fixtures for the loqculate test suite."""
 import pytest
 import numpy as np
 

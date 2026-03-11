@@ -1,20 +1,20 @@
 """bench_simulation.py — Statistical robustness comparison of LOQ detection rules.
 
-Addresses the question: Is v2's 3-consecutive-point window more statistically
-robust than v1's single-point rule?  Are we discarding too many LOQs, or are
+Addresses the question: Is the 3-consecutive-point window more statistically
+robust than the single-point rule?  Are we discarding too many LOQs, or are
 we appropriately controlling false discoveries?
 
 Methodology
 -----------
 All four experiments apply the candidate LOQ rules to the **same** bootstrap
-CV profile (produced by v2's PiecewiseWLS TRF fit).  This cleanly isolates the
+CV profile (produced by PiecewiseWLS TRF fit).  This cleanly isolates the
 window-size effect from the optimizer difference.
 
 Rules compared
 --------------
-  window=1  — v1 rule: ANY single grid point below CV threshold triggers LOQ
-  window=3  — v2 rule: 3 CONSECUTIVE points must be below threshold
-  window=5  — stricter reference rule
+  window=1 (liberal)  — ANY single grid point below CV threshold triggers LOQ
+  window=3 (default)  — 3 CONSECUTIVE points must be below threshold
+  window=5            — stricter reference rule
 
 Experiments
 -----------
@@ -72,6 +72,7 @@ Options
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -82,7 +83,8 @@ import numpy as np
 # Path setup — allow running from repo root without installation
 # ---------------------------------------------------------------------------
 _REPO = Path(__file__).parent.parent
-sys.path.insert(0, str(_REPO / 'v2'))
+if str(_REPO) not in sys.path:
+    sys.path.insert(0, str(_REPO))
 
 from loqculate.models import PiecewiseWLS
 from loqculate.testing.simulator import CurveSimulator
@@ -95,9 +97,9 @@ from loqculate.utils.threshold import find_loq_threshold
 
 # Each entry: display_name → window_size fed to find_loq_threshold
 RULES: Dict[str, int] = {
-    'window=1 (v1)': 1,
-    'window=3 (v2)': 3,
-    'window=5':      5,
+    'window=1 (liberal)': 1,
+    'window=3 (default)': 3,
+    'window=5':           5,
 }
 
 _DEFAULT_CONCS = [
@@ -132,7 +134,7 @@ def _apply_rule(
     Passes the full x_grid directly to find_loq_threshold, which internally
     filters to x > 0.  x_grid already starts at lod (set by
     ``_ensure_boot_summary``), so no extra filtering is needed — and matches
-    exactly what v2's PiecewiseWLS.loq() does.
+    exactly what PiecewiseWLS.loq() does.
     """
     return find_loq_threshold(x_grid, cv_arr, cv_thresh=cv_thresh, window=window)
 
@@ -641,11 +643,38 @@ def _print_summary(
     print('  Stability: Lower CV_LOQ = less sensitive to bootstrap random seed.')
     print('             High instability is a sign the rule fires on random CV dips.')
     print()
-    print('  window=1 (v1) has the highest sensitivity but also the highest FDR')
-    print('  and lowest stability.  window=3 (v2) provides a better FDR/sensitivity')
+    print('  window=1 (liberal) has the highest sensitivity but also the highest FDR')
+    print('  and lowest stability.  window=3 (default) provides a better FDR/sensitivity')
     print('  balance for typical proteomics calibration curves.')
     print(SEP)
     print()
+
+
+# ---------------------------------------------------------------------------
+# JSON helper (inline — this script does not import from _helpers)
+# ---------------------------------------------------------------------------
+
+def _json_safe(obj):
+    """Recursively convert *obj* to a JSON-serialisable form.
+
+    * numpy integers / floats are cast to Python int / float.
+    * Non-finite floats (inf, nan) become ``None``.
+    * numpy arrays are converted via ``tolist()``.
+    """
+    import math
+    if isinstance(obj, dict):
+        return {k: _json_safe(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_json_safe(v) for v in obj]
+    if isinstance(obj, float):
+        return None if not math.isfinite(obj) else obj
+    if isinstance(obj, np.integer):
+        return int(obj)
+    if isinstance(obj, np.floating):
+        return None if not np.isfinite(obj) else float(obj)
+    if isinstance(obj, np.ndarray):
+        return _json_safe(obj.tolist())
+    return obj
 
 
 # ---------------------------------------------------------------------------
@@ -674,6 +703,8 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument('--seed', type=int, default=42, help='Master RNG seed')
     p.add_argument('--quick', action='store_true',
                    help='Fast smoke-test mode: n_curves=15, n_profiles=500, n_seeds=30')
+    p.add_argument('--save', type=str, default=None, metavar='PATH',
+                   help='Write JSON results to PATH (e.g. tmp/results/bench_simulation.json)')
     return p.parse_args()
 
 
@@ -733,6 +764,50 @@ def main() -> None:
     _print_exp3(acc_results)
     _print_exp4(stab_results)
     _print_summary(true_cvs, fdr_results, acc_results, stab_results, cv_thresh)
+
+    if args.save:
+        import datetime
+        results_dict = {
+            'meta': {
+                'n_curves':        args.n_curves,
+                'n_profiles':      args.n_profiles,
+                'n_seeds':         args.n_seeds,
+                'bootreps':        args.bootreps,
+                'oracle_bootreps': args.oracle_bootreps,
+                'cv_thresh':       cv_thresh,
+                'rules':           list(RULES.keys()),
+                'snr_levels':      snr_levels,
+                'seed':            args.seed,
+                'timestamp':       datetime.datetime.now().isoformat(),
+            },
+            'experiment_1': {
+                'true_cvs': true_cvs.tolist(),
+                # keys are numpy float64 → convert to plain float strings
+                'results': {
+                    f'{float(k):.8g}': v
+                    for k, v in fdr_results.items()
+                },
+            },
+            'experiment_2': {
+                f'{snr:.8g}': {
+                    'n_lod_ok':     sens_results[snr]['n_lod_ok'],
+                    'n_oracle_fin': sens_results[snr]['n_oracle_fin'],
+                    **{name: sens_results[snr][name] for name in RULES},
+                }
+                for snr in snr_levels
+            },
+            'experiment_3': {
+                name: errs for name, errs in acc_results.items()
+            },
+            'experiment_4': {
+                name: loqs for name, loqs in stab_results.items()
+            },
+        }
+        out = Path(args.save)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        with open(out, 'w') as f:
+            json.dump(_json_safe(results_dict), f, indent=2)
+        print(f'Results saved \u2192 {out}')
 
 
 if __name__ == '__main__':

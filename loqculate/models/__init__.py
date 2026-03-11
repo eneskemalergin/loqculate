@@ -1,4 +1,4 @@
-# Models subpackage for loqculate v2
+# Models subpackage
 from loqculate.models.piecewise_wls import PiecewiseWLS
 from loqculate.models.cv_empirical import EmpiricalCV
 

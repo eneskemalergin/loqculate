@@ -50,8 +50,8 @@ def bootstrap_predictions(
     nan_predictions = np.full((n_reps, n_grid), np.nan)
 
     # --- Pre-validation: catch all-identical y before entering the loop.
-    # All-zero (or constant) peptides are common in proteomics.  The v1 code
-    # has a latent infinite-loop bug here; v2 catches this explicitly.
+    # All-zero (or constant) peptides are common in proteomics.  The original code
+    # has a latent infinite-loop bug here; this implementation catches it explicitly.
     if np.unique(y).size <= 1:
         const = float(y[0]) if len(y) else np.nan
         summary = {

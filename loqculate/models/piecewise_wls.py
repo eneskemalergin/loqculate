@@ -36,7 +36,7 @@ def _piecewise(x: np.ndarray, a: float, b: float, c_minus_b: float) -> np.ndarra
 
 
 # ---------------------------------------------------------------------------
-# Initial-guess helpers (ported from v1)
+# Initial-guess helpers (ported from original Pino implementation)
 # ---------------------------------------------------------------------------
 
 def _initialize_params_legacy(x: np.ndarray, y: np.ndarray):
@@ -97,10 +97,10 @@ def _initialize_params(x: np.ndarray, y: np.ndarray, weights: np.ndarray):
 # ---------------------------------------------------------------------------
 
 class PiecewiseWLS(CalibrationModel):
-    """Pino 2020 piecewise WLS model, optimised for v2.
+    """Pino 2020 piecewise WLS model, reimplemented with scipy TRF optimization.
 
-    Key changes from v1
-    -------------------
+    Key improvements over the original implementation
+    --------------------------------------------------
     * ``scipy.optimize.curve_fit`` (TRF) replaces ``lmfit`` Levenberg-Marquardt.
       Single-fit latency is comparable (~1.8 ms, 40 observations, 3 parameters);
       TRF is preferred for its numerical robustness with parameter bounds.
@@ -113,9 +113,8 @@ class PiecewiseWLS(CalibrationModel):
       preserving the full sampling distribution of parameter estimates.
     * LOQ search uses a vectorized sliding-window (prevents false LOQs from
       non-monotonic CV bounces).
-    * True throughput advantage: v2's :class:`~loqculate.cli.CLI` dispatches
-      peptides across CPU cores; at scale (23 k peptides, 32 cores) v2 processes
-      the full dataset in ~1 min vs ~6 h for v1's sequential loop.
+    * Multiprocessing: the CLI dispatches peptides across CPU cores; at scale
+      (23 k peptides, 32 cores) the full dataset runs in ~1 min.
 
     Parameters
     ----------
@@ -259,7 +258,7 @@ class PiecewiseWLS(CalibrationModel):
     # ------------------------------------------------------------------
 
     def lod(self, std_mult: float = DEFAULT_STD_MULT) -> float:
-        """Limit of detection using the same math as v1 ``calculate_lod()``."""
+        """Limit of detection using the same math as the original ``calculate_lod()``."""
         self._check_is_fitted()
 
         if std_mult in self._lod_cache:
@@ -287,7 +286,7 @@ class PiecewiseWLS(CalibrationModel):
         std_noise = float(np.std(noise_y, ddof=1))
         lod_val = (c + std_mult * std_noise - b) / a
 
-        # Edge-case guards (same as v1)
+        # Edge-case guards
         if not np.isfinite(lod_val) or lod_val > np.max(x):
             self._lod_cache[std_mult] = np.inf
             return np.inf

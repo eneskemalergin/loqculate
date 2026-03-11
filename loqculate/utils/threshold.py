@@ -14,7 +14,7 @@ def find_loq_threshold(
     *cv_array* is at or below *cv_thresh* **and** stays below threshold for
     the next ``effective_window - 1`` consecutive points as well.
 
-    This prevents false LOQs caused by non-monotonic CV bounces, which the v1
+    This prevents false LOQs caused by non-monotonic CV bounces, which the original
     naive ``min()`` approach is susceptible to.
 
     Parameters
