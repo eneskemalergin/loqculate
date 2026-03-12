@@ -3,17 +3,21 @@
 Answers
 -------
 * How many peptides per second does each implementation process in parallel?
-* Which implementation uses more Python heap memory per peptide?
+* Which implementation uses more RSS memory per peptide?
 * How do finite-LOD/LOQ yields compare at scale?
+* What fraction of peptides are quantifiable at each calibration concentration?
 
 Key methodology
 ---------------
 * **Throughput phase**: both the original and loqculate are run via multiprocessing.Pool on
   ``--n_peptides`` (default 1000) peptides with ``--bootreps`` reps each.
 * **Memory phase**: a smaller serial batch of ``--mem_peptides`` (default 50)
-  peptides is run inside ``tracemalloc`` to sample peak heap allocation.
-  Divide peak by ``mem_peptides`` to get MB/peptide.  The original uses pandas DataFrames
-  internally (more allocations); loqculate uses pure numpy (less).
+  peptides is processed serially and VmRSS (from /proc/self/status) is sampled
+  before and after.  The RSS delta captures C-extension (NumPy/scipy) allocations
+  that tracemalloc misses.  Divide delta by ``mem_peptides`` to get MB/peptide.
+* **LOQ yield phase**: for each calibration concentration level, the fraction of
+  processed peptides with a finite LOQ ≤ that level is reported (empirical
+  sensitivity curve of the assay).
 * The original is imported once per worker via ``importlib.util`` in a Pool initializer,
   avoiding repeated file-level ``exec`` in the hot loop.
 
@@ -40,7 +44,6 @@ import json
 import os
 import sys
 import time
-import tracemalloc
 import warnings
 from pathlib import Path
 from typing import List, Tuple
@@ -49,7 +52,7 @@ import numpy as np
 
 # --- path setup ---------------------------------------------------------
 sys.path.insert(0, str(Path(__file__).parent))   # benchmarks/ on path
-from _helpers import DEMO_DATA, DEMO_MAP, FULL_DATA, FULL_MAP, OLD_DIR, load_original_calc, _json_safe, _ci95
+from _helpers import DEMO_DATA, DEMO_MAP, FULL_DATA, FULL_MAP, OLD_DIR, load_original_calc, _json_safe, _ci95, _rss_mb
 
 # loqculate package is at repo root — _helpers already adds it to sys.path
 from loqculate.io import read_calibration_data
@@ -187,9 +190,13 @@ def _run_original_parallel(
 # -----------------------------------------------------------------------
 
 def _measure_loqculate_mem_mb(mem_args: List[Tuple]) -> float:
-    """Return peak Python heap (MB) for processing mem_args peptides serially."""
+    """Return RSS delta (MB) while loqculate processes mem_args peptides serially.
+
+    Uses /proc/self/status VmRSS to capture C-extension (NumPy/scipy) allocations
+    that tracemalloc misses.  Returns max(0, rss_after - rss_before).
+    """
     gc.collect()
-    tracemalloc.start()
+    rss_before = _rss_mb()
     for pep, x_list, y_list, bootreps in mem_args:
         x = np.asarray(x_list, dtype=float)
         y = np.asarray(y_list, dtype=float)
@@ -198,17 +205,16 @@ def _measure_loqculate_mem_mb(mem_args: List[Tuple]) -> float:
             m.fit(x, y)
         except Exception:
             pass
-    _, peak = tracemalloc.get_traced_memory()
-    tracemalloc.stop()
-    return peak / 1e6
+    rss_after = _rss_mb()
+    return max(0.0, rss_after - rss_before)
 
 
 def _measure_original_mem_mb(orig_mod, mem_args: List[Tuple]) -> float:
-    """Return peak Python heap (MB) for original processing mem_args peptides serially."""
+    """Return RSS delta (MB) while the original processes mem_args peptides serially."""
     import pandas as pd
     import tempfile
     gc.collect()
-    tracemalloc.start()
+    rss_before = _rss_mb()
     with tempfile.TemporaryDirectory() as tmpdir:
         for pep, x_list, y_list, bootreps in mem_args:
             x = np.asarray(x_list, dtype=float)
@@ -227,9 +233,8 @@ def _measure_original_mem_mb(orig_mod, mem_args: List[Tuple]) -> float:
                     )
                 except Exception:
                     pass
-    _, peak = tracemalloc.get_traced_memory()
-    tracemalloc.stop()
-    return peak / 1e6
+    rss_after = _rss_mb()
+    return max(0.0, rss_after - rss_before)
 
 
 # -----------------------------------------------------------------------
@@ -263,6 +268,7 @@ def _report(
     bootreps: int, workers: int, n_reps: int,
     max_x: float = np.inf,
     dataset_name: str = '',
+    loq_yield: dict = None,    # {conc_level: {'n_quant': int, 'frac': float}}
 ) -> None:
     orig_lods, orig_loqs, orig_errors, orig_plod, orig_ploq = _stats(orig_res, max_x)
     new_lods,  new_loqs,  new_errors,  new_plod,  new_ploq  = _stats(new_res,  max_x)
@@ -305,7 +311,7 @@ def _report(
 
     print(f'  {"Dataset":<20}{SEP}{dataset_name}')
     print(f'  {"Peptides (scale)":<20}{SEP}{n} / {n_total} total')
-    print(f'  {"Peptides (memory)":<20}{SEP}{n_mem} (serial, tracemalloc)')
+    print(f'  {"Peptides (memory)":<20}{SEP}{n_mem} (serial, VmRSS delta)')
     print(f'  {"Bootstrap reps":<20}{SEP}{bootreps}')
     print(f'  {"Parallel workers":<20}{SEP}{workers}')
     print(f'  {"Timing reps (CI)":<20}{SEP}{n_reps}')
@@ -320,9 +326,9 @@ def _report(
          _fmt_time(t_orig, orig_ci, tp_orig),
          _fmt_time(t_new,  new_ci,  tp_new),
          f'{spd:.2f}x  ({winner})')
-    _row('Peak heap',
-         f'{orig_mem_mb/n_mem:.4f} MB/pep  (total {orig_mem_mb:.1f} MB)',
-         f'{new_mem_mb/n_mem:.4f} MB/pep  (total {new_mem_mb:.1f} MB)',
+    _row('RSS delta (VmRSS)',
+         f'{orig_mem_mb/n_mem:.4f} MB/pep  (total Δ {orig_mem_mb:.1f} MB)',
+         f'{new_mem_mb/n_mem:.4f} MB/pep  (total Δ {new_mem_mb:.1f} MB)',
          f'{mem_ratio:.2f}x  ({mem_winner})')
 
     print()
@@ -357,6 +363,17 @@ def _report(
         _row(f'Est full ({n_total})',
              f'~{est_orig:.0f} s  (~{est_orig/60:.1f} min)',
              f'~{est_new:.0f} s  (~{est_new/60:.1f} min)')
+
+    # LOQ yield by concentration band (loqculate only — empirical sensitivity curve)
+    if loq_yield:
+        print()
+        print(f'  LOQ yield by concentration (loqculate) — fraction of {n} peptides quantifiable')
+        print(f'  at-or-below each calibration level:')
+        print(f'  {"conc":>12}  {"n_quant":>8}  {"fraction":>9}')
+        print(f'  {"-"*34}')
+        for c, info in sorted(loq_yield.items()):
+            bar = '#' * int(info['frac'] * 20)
+            print(f'  {c:>12.4g}  {info["n_quant"]:>8d}  {info["frac"]:>8.1%}  {bar}')
 
     for label, errors in [('orig errors', orig_errors), ('lq errors', new_errors)]:
         if errors:
@@ -429,16 +446,16 @@ def main() -> None:
     orig_mod = load_original_calc()
 
     # ------------------------------------------------------------------ #
-    # Memory phase (serial, in main process, to keep tracemalloc isolated)
+    # Memory phase (serial, in main process, to keep RSS measurement clean)
     # ------------------------------------------------------------------ #
-    print(f'\nMemory phase: {n_mem} peptides, {args.bootreps} bootreps (serial) ...')
-    print('  Measuring original peak heap ...', end='', flush=True)
+    print(f'\nMemory phase: {n_mem} peptides, {args.bootreps} bootreps (serial, VmRSS) ...')
+    print('  Measuring original RSS delta ...', end='', flush=True)
     orig_mem_mb = _measure_original_mem_mb(orig_mod, mem_args)
-    print(f' {orig_mem_mb:.2f} MB total  ({orig_mem_mb/n_mem:.4f} MB/pep)')
+    print(f' Δ{orig_mem_mb:.2f} MB total  ({orig_mem_mb/n_mem:.4f} MB/pep)')
 
-    print('  Measuring loqculate peak heap ...', end='', flush=True)
+    print('  Measuring loqculate RSS delta ...', end='', flush=True)
     new_mem_mb = _measure_loqculate_mem_mb(mem_args)
-    print(f' {new_mem_mb:.2f} MB total  ({new_mem_mb/n_mem:.4f} MB/pep)')
+    print(f' Δ{new_mem_mb:.2f} MB total  ({new_mem_mb/n_mem:.4f} MB/pep)')
 
     # ------------------------------------------------------------------ #
     # Throughput phase (parallel)
@@ -464,6 +481,18 @@ def main() -> None:
         print(f'    rep {i+1:2d}/{n_reps}: {t:.2f}s  ({n/t:.1f} pep/s)', flush=True)
 
     # ------------------------------------------------------------------ #
+    # LOQ yield by concentration band (loqculate results)
+    # ------------------------------------------------------------------ #
+    conc_levels = sorted(c for c in np.unique(data.concentration) if c > 0)
+    loq_yield: dict = {}
+    for c in conc_levels:
+        n_quant = sum(
+            1 for r in new_res
+            if np.isfinite(r[2]) and 0 < r[2] <= c
+        )
+        loq_yield[float(c)] = {'n_quant': n_quant, 'frac': n_quant / n if n > 0 else 0.0}
+
+    # ------------------------------------------------------------------ #
     # Report
     # ------------------------------------------------------------------ #
     _report(
@@ -477,6 +506,7 @@ def main() -> None:
         n_reps=n_reps,
         max_x=max_x,
         dataset_name=data_path.name,
+        loq_yield=loq_yield,
     )
 
     if args.save:
@@ -536,8 +566,13 @@ def main() -> None:
                 'new_mb_per_pep':      new_mem_mb  / n_mem if n_mem > 0 else None,
                 'ratio_orig_over_new': orig_mem_mb / new_mem_mb if new_mem_mb > 0 else None,
             },
-            'coverage_orig': _agg(orig_res),
-            'coverage_new':  _agg(new_res),
+            'coverage_orig':  _agg(orig_res),
+            'coverage_new':   _agg(new_res),
+            'loq_yield': {
+                str(c): {'n_quant': info['n_quant'], 'frac': info['frac']}
+                for c, info in sorted(loq_yield.items())
+            },
+            'memory_method': 'VmRSS_delta',
         }
         out = Path(args.save)
         out.parent.mkdir(parents=True, exist_ok=True)

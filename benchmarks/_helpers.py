@@ -134,3 +134,42 @@ def _timing_stats(runs) -> dict:
     mean = float(_np.mean(arr))
     std  = float(_np.std(arr, ddof=1)) if len(arr) > 1 else 0.0
     return {'runs': arr, 'mean': mean, 'std': std, 'ci95': _ci95(arr)}
+
+
+# ---------------------------------------------------------------------------
+# Resident-set memory helper (Linux /proc, falls back to None on other OS)
+# ---------------------------------------------------------------------------
+
+def _rss_mb() -> float:
+    """Current process RSS in MB from /proc/self/status (Linux).
+
+    Unlike tracemalloc, this includes C-extension allocations (NumPy, scipy).
+    Returns float('nan') if /proc is unavailable (macOS, Windows).
+    """
+    try:
+        with open('/proc/self/status') as _f:
+            for _line in _f:
+                if _line.startswith('VmRSS:'):
+                    return int(_line.split()[1]) / 1024.0   # kB → MB
+    except OSError:
+        pass
+    return float('nan')
+
+
+# ---------------------------------------------------------------------------
+# Shared LOQ-rule registry used by bench_simulation and bench_window_rules
+# ---------------------------------------------------------------------------
+
+# Each entry: display_name → window_size fed to find_loq_threshold
+RULES: dict = {
+    'window=1 (liberal)': 1,
+    'window=3 (default)': 3,
+    'window=5':           5,
+}
+
+# Default non-blank concentration grid for simulation benchmarks
+# (same grid used in bench_simulation and bench_window_rules)
+SIM_CONCS: list = [
+    0.0, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 50.0,
+    100.0, 200.0, 500.0, 1000.0, 2000.0,
+]

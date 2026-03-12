@@ -1,14 +1,20 @@
-"""bench_simulation.py — Statistical robustness comparison of LOQ detection rules.
+"""bench_simulation.py — PiecewiseWLS LOQ accuracy and stability on synthetic calibration curves.
 
-Addresses the question: Is the 3-consecutive-point window more statistically
-robust than the single-point rule?  Are we discarding too many LOQs, or are
-we appropriately controlling false discoveries?
+Addresses the question: Given a PiecewiseWLS bootstrap CV profile, how accurately
+and stably does each window-size rule estimate the LOQ across realistic SNR levels?
+
+Note on scope
+-------------
+This script focuses on PiecewiseWLS-specific experiments (full calibration curve fits,
+oracle comparison, bootstrap stability).  The FDR-under-null experiment (Exp 1 in the
+previous version) has been moved to bench_window_rules.py, which provides a unified
+FDR/TPR comparison for BOTH PiecewiseWLS and EmpiricalCV in one place.
 
 Methodology
 -----------
-All four experiments apply the candidate LOQ rules to the **same** bootstrap
-CV profile (produced by PiecewiseWLS TRF fit).  This cleanly isolates the
-window-size effect from the optimizer difference.
+All three experiments apply the candidate LOQ rules to bootstrap CV profiles produced
+by PiecewiseWLS (scipy TRF fit).  This cleanly isolates the window-size effect from
+the optimizer difference.
 
 Rules compared
 --------------
@@ -18,38 +24,29 @@ Rules compared
 
 Experiments
 -----------
-  1. FDR Profile
-       Synthetic CV profiles with a swept true-mean-CV around the threshold.
-       When mean_CV > threshold, any finite LOQ call is a FALSE POSITIVE.
-       When mean_CV < threshold, a finite call is a TRUE POSITIVE.
-       The detection-rate curve reveals each rule's effective discrimination
-       boundary — analogous to a 1-D ROC.
-
-  2. Sensitivity vs Signal-to-Noise Ratio
+  1. Sensitivity vs Signal-to-Noise Ratio
        Full piecewise-linear calibration curves with known SNR.
        An oracle (high-bootrep) run establishes empirical ground-truth per curve.
        TPR = fraction of "oracle-positive" curves where the standard run also
        calls finite LOQ.
 
-  3. LOQ Estimate Accuracy
+  2. LOQ Estimate Accuracy
        For TRUE POSITIVE pairs (both oracle and standard return finite LOQ)
        the signed relative error vs the oracle is reported:
          rel_error = (rule_LOQ − oracle_LOQ) / oracle_LOQ
        Negative bias = fires earlier than oracle (liberal/over-sensitive).
        Positive bias = fires later (conservative, well-anchored).
 
-  4. Bootstrap Stability
+  3. Bootstrap Stability
        One fixed calibration curve (SNR ≈ 2), N different bootstrap seeds.
        The coefficient of variation (CV) of resulting LOQ estimates quantifies
        intrinsic rule noise.  window=1 fires on sampling dips → high LOQ CV.
 
 Statistical interpretation key
 -------------------------------
-  FDR  = false positive rate  = FP / (FP + TN)  [want < 0.05]
-  TPR  = sensitivity          = TP / (TP + FN)  [want high]
-  A good rule maximises TPR while keeping FDR low.  The window size is a
-  tunable knob: larger window → lower FDR, lower TPR.  window=3 sits at a
-  practically useful point of this tradeoff for typical proteomics SNR.
+  TPR  = sensitivity = TP / (TP + FN)  [want high]
+  Oracle = high-bootrep window=3 run on the same data.
+  FDR/null experiments → see bench_window_rules.py
 
 Run from the repository root::
 
@@ -59,13 +56,12 @@ Run from the repository root::
 
 Options
 -------
---n_curves       Calibration curves per SNR level for Exp 2 & 3 (default: 100)
---n_profiles     CV profiles for FDR experiment Exp 1 (default: 3000)
---n_seeds        RNG seeds for stability experiment Exp 4 (default: 150)
+--n_curves       Calibration curves per SNR level for Exps 1 & 2 (default: 100)
+--n_seeds        RNG seeds for stability experiment Exp 3 (default: 150)
 --bootreps       Bootstrap reps for primary runs (default: 100)
 --oracle_bootreps  Bootstrap reps for oracle (default: 300)
 --cv_thresh      CV threshold for LOQ (default: 0.20)
---snr_levels     Comma-separated SNR values for Exp 2 (default: 0.1,0.25,0.5,1,2,5,10)
+--snr_levels     Comma-separated SNR values for Exp 1 (default: 1,2,3,5,8,15,30)
 --seed           Master RNG seed (default: 42)
 --quick          Shorthand for small/fast numbers (overrides other size args)
 """
@@ -86,21 +82,13 @@ _REPO = Path(__file__).parent.parent
 if str(_REPO) not in sys.path:
     sys.path.insert(0, str(_REPO))
 
+# Shared RULES registry from _helpers avoids duplicate definitions
+sys.path.insert(0, str(Path(__file__).parent))
+from _helpers import RULES, _json_safe as _helpers_json_safe
+
 from loqculate.models import PiecewiseWLS
 from loqculate.testing.simulator import CurveSimulator
 from loqculate.utils.threshold import find_loq_threshold
-
-
-# ---------------------------------------------------------------------------
-# LOQ rule registry
-# ---------------------------------------------------------------------------
-
-# Each entry: display_name → window_size fed to find_loq_threshold
-RULES: Dict[str, int] = {
-    'window=1 (liberal)': 1,
-    'window=3 (default)': 3,
-    'window=5':           5,
-}
 
 _DEFAULT_CONCS = [
     0.0, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 50.0,
@@ -182,54 +170,9 @@ def _sim_curves(slope: float, n_peptides: int, seed: int) -> Tuple[np.ndarray, .
 
 
 # ---------------------------------------------------------------------------
-# Experiment 1 — FDR Profile (direct CV-profile simulation)
-# ---------------------------------------------------------------------------
-
-def experiment_fdr(
-    n_profiles: int,
-    cv_thresh: float,
-    seed: int,
-) -> Tuple[np.ndarray, Dict]:
-    """Sweep the true mean CV of synthetic profiles from 0.7× to 1.5× threshold.
-
-    For each mean-CV level:
-      * mean_CV > cv_thresh → "null" region: finite LOQ call  =  FP
-      * mean_CV < cv_thresh → "signal" region: finite LOQ call = TP
-
-    The CV noise (trial-to-trial fluctuation around the true mean) is fixed at
-    10 % of the threshold (σ = 0.1 × cv_thresh), which is realistic for a
-    100-rep bootstrap grid: residual bootstrap variance at each grid point.
-
-    The detection-rate curve produced is the empirical power curve of each rule.
-    Its x-intercept (where FP rate → 0) marks the effective discrimination
-    boundary.
-    """
-    rng = np.random.default_rng(seed)
-    x_grid = np.linspace(0.01, 1.0, 100)     # synthetic non-zero grid
-    noise_scale = cv_thresh * 0.10            # ±10 % CV fluctuation per point
-
-    # 17 true_cv levels from 0.70× to 1.50× threshold
-    true_cvs = np.linspace(cv_thresh * 0.70, cv_thresh * 1.50, 17)
-
-    results: Dict[float, Dict[str, float]] = {}
-    for true_cv in true_cvs:
-        hits = {name: 0 for name in RULES}
-        for _ in range(n_profiles):
-            # Each profile: 100 correlated-ish CV values drawn independently
-            cv_arr = np.maximum(0.001,
-                                rng.normal(true_cv, noise_scale, size=len(x_grid)))
-            for name, win in RULES.items():
-                loq = find_loq_threshold(x_grid, cv_arr,
-                                         cv_thresh=cv_thresh, window=win)
-                if np.isfinite(loq):
-                    hits[name] += 1
-        results[true_cv] = {name: hits[name] / n_profiles for name in RULES}
-
-    return true_cvs, results
-
-
-# ---------------------------------------------------------------------------
-# Experiment 2 — Sensitivity vs SNR (full calibration curves)
+# Experiment 1 — Sensitivity vs SNR (full calibration curves)
+# NOTE: FDR-vs-null experiment has moved to bench_window_rules.py (Exp 1)
+#       for unified comparison with EmpiricalCV's raw-replicate FDR.
 # ---------------------------------------------------------------------------
 
 def experiment_sensitivity(
@@ -431,56 +374,10 @@ def experiment_stability(
 # Printing
 # ---------------------------------------------------------------------------
 
-def _print_exp1(true_cvs: np.ndarray, results: Dict, cv_thresh: float) -> None:
+def _print_exp1(results: Dict, snr_levels: List[float]) -> None:
     SEP = '=' * 88
     print(f'\n{SEP}')
-    print('  EXPERIMENT 1 — FDR / TPR Profile (direct CV-profile simulation)')
-    print(f'  Profile mean CV swept vs threshold ({cv_thresh:.2f}).  '
-          f'Columns = detection rate; null region = FPR, signal region = TPR.')
-    print(SEP)
-
-    rule_names = list(RULES)
-    hdr = f'  {"Mean CV":>8}  {"Δ thresh":>9}  {"Region":>8}'
-    for name in rule_names:
-        hdr += f'  {name:>16}'
-    print(hdr)
-    print('  ' + '-' * (len(hdr) - 2))
-
-    for true_cv in true_cvs:
-        row = results[true_cv]
-        delta_pct = (true_cv - cv_thresh) / cv_thresh * 100
-        region = 'null (FP)' if true_cv > cv_thresh else 'signal(TP)'
-        line = f'  {true_cv:>8.3f}  {delta_pct:>+8.1f}%  {region:>9}'
-        for name in rule_names:
-            rate = row[name]
-            line += f'  {rate:>15.1%}'
-        # Highlight the threshold crossing
-        if abs(true_cv - cv_thresh) < (true_cvs[1] - true_cvs[0]) * 0.6:
-            line += '  ← threshold'
-        print(line)
-
-    print()
-    # Summarise FDR at the "pure null" end and TPR at the "pure signal" end
-    null_cv   = max(r for r in true_cvs if r > cv_thresh * 1.4)
-    signal_cv = min(r for r in true_cvs if r < cv_thresh * 0.85)
-    print(f'  Summary at pure null (mean_CV = {null_cv:.3f}, +{(null_cv/cv_thresh-1)*100:.0f}% above threshold):')
-    print(f'    {"Rule":<20}   FPR      (false positives out of {null_cv:.3f} null profiles)')
-    for name in rule_names:
-        fpr = results[null_cv][name]
-        print(f'    {name:<20}   {fpr:.1%}')
-    print()
-    print(f'  Summary at pure signal (mean_CV = {signal_cv:.3f}, {(1-signal_cv/cv_thresh)*100:.0f}% below threshold):')
-    print(f'    {"Rule":<20}   TPR')
-    for name in rule_names:
-        tpr = results[signal_cv][name]
-        print(f'    {name:<20}   {tpr:.1%}')
-    print()
-
-
-def _print_exp2(results: Dict, snr_levels: List[float]) -> None:
-    SEP = '=' * 88
-    print(f'\n{SEP}')
-    print('  EXPERIMENT 2 — Sensitivity (TPR) vs Signal-to-Noise Ratio')
+    print('  EXPERIMENT 1 — Sensitivity (TPR) vs Signal-to-Noise Ratio')
     print('  Oracle = high-bootrep window=3 run.  '
           'TPR = oracle-positive curves where standard run is also positive.')
     print('  FPR* = extra finite LOQ calls beyond oracle (rule more liberal than oracle).')
@@ -506,10 +403,10 @@ def _print_exp2(results: Dict, snr_levels: List[float]) -> None:
     print()
 
 
-def _print_exp3(rel_errors: Dict[str, List[float]]) -> None:
+def _print_exp2(rel_errors: Dict[str, List[float]]) -> None:
     SEP = '=' * 88
     print(f'\n{SEP}')
-    print('  EXPERIMENT 3 — LOQ Estimate Accuracy vs Oracle (TP pairs only)')
+    print('  EXPERIMENT 2 — LOQ Estimate Accuracy vs Oracle (TP pairs only)')
     print('  rel_error = (rule_LOQ − oracle_LOQ) / oracle_LOQ')
     print('  Negative = fires earlier than oracle (liberal).  '
           'Positive = fires later (conservative).')
@@ -531,10 +428,10 @@ def _print_exp3(rel_errors: Dict[str, List[float]]) -> None:
     print()
 
 
-def _print_exp4(loq_lists: Dict[str, List[float]]) -> None:
+def _print_exp3(loq_lists: Dict[str, List[float]]) -> None:
     SEP = '=' * 88
     print(f'\n{SEP}')
-    print('  EXPERIMENT 4 — Bootstrap Stability (LOQ variability across seeds, '
+    print('  EXPERIMENT 3 — Bootstrap Stability (LOQ variability across seeds, '
           'same calibration data)')
     print('  CV_LOQ = std(finite_LOQs) / mean(finite_LOQs) — lower = more stable.')
     print(SEP)
@@ -560,11 +457,9 @@ def _print_exp4(loq_lists: Dict[str, List[float]]) -> None:
 
 
 def _print_summary(
-    true_cvs: np.ndarray,
-    fdr_results: Dict,
+    sens_results: Dict,
     rel_errors: Dict[str, List[float]],
     loq_lists: Dict[str, List[float]],
-    cv_thresh: float,
 ) -> None:
     SEP = '=' * 88
     print(f'\n{SEP}')
@@ -576,42 +471,20 @@ def _print_summary(
     print(f'  {"Metric":<36}' + ''.join(f'  {n:>{col_w}}' for n in rule_names))
     print('  ' + '-' * (38 + (col_w + 2) * len(rule_names)))
 
-    # FDR at near-null level (+15% above threshold) — this is the zone where
-    # the rules actually discriminate.  The extreme null (+50%) is trivially
-    # 0% for all rules because random CV dips never reach threshold there.
-    null_cv = min((r for r in true_cvs if r >= cv_thresh * 1.12), key=lambda r: abs(r - cv_thresh * 1.15))
-    fdr_row = f'  {"FDR @ mean_CV="+f"{null_cv:.2f}":<36}'
-    for name in rule_names:
-        fdr_row += f'  {fdr_results[null_cv][name]:>{col_w}.1%}'
-    print(fdr_row)
-
-    # --- TPR at near-threshold signal ---
-    sig_cv = min(r for r in true_cvs if r < cv_thresh * 0.85)
-    tpr_row = f'  {"TPR @ mean_CV="+f"{sig_cv:.2f}":<36}'
-    for name in rule_names:
-        tpr_row += f'  {fdr_results[sig_cv][name]:>{col_w}.1%}'
-    print(tpr_row)
-
-    # --- Accuracy ---
+    # Accuracy (Exp 2)
     acc_row = f'  {"Mean |error| vs oracle":<36}'
     for name in rule_names:
         errs = rel_errors.get(name, [])
-        if errs:
-            acc_row += f'  {np.mean(np.abs(errs)):>{col_w}.1%}'
-        else:
-            acc_row += f'  {"N/A":>{col_w}}'
+        acc_row += f'  {np.mean(np.abs(errs)):>{col_w}.1%}' if errs else f'  {"N/A":>{col_w}}'
     print(acc_row)
 
     bias_row = f'  {"Mean bias vs oracle (signed)":<36}'
     for name in rule_names:
         errs = rel_errors.get(name, [])
-        if errs:
-            bias_row += f'  {np.mean(errs):>+{col_w}.1%}'
-        else:
-            bias_row += f'  {"N/A":>{col_w}}'
+        bias_row += f'  {np.mean(errs):>+{col_w}.1%}' if errs else f'  {"N/A":>{col_w}}'
     print(bias_row)
 
-    # --- Stability ---
+    # Stability (Exp 3)
     stab_row = f'  {"Stability: CV_LOQ (same data, diff seeds)":<36}'
     for name in rule_names:
         loqs = loq_lists.get(name, [])
@@ -635,46 +508,20 @@ def _print_summary(
     print(f'\n{SEP}')
     print('  INTERPRETATION')
     print(SEP)
-    print('  FDR:       Lower is better.  A rule with FDR > 5% calls finite LOQs')
-    print('             on data that genuinely has no stable CV run below threshold.')
-    print('  TPR:       Higher is better.  At identical FDR, higher TPR = more power.')
+    print('  FDR/null experiments → see bench_window_rules.py Exp 1 & 2.')
     print('  Accuracy:  Lower |error| = estimates closer to the high-bootrep oracle.')
     print('             Negative bias means the rule fires EARLIER (more liberal).')
     print('  Stability: Lower CV_LOQ = less sensitive to bootstrap random seed.')
     print('             High instability is a sign the rule fires on random CV dips.')
     print()
-    print('  window=1 (liberal) has the highest sensitivity but also the highest FDR')
-    print('  and lowest stability.  window=3 (default) provides a better FDR/sensitivity')
-    print('  balance for typical proteomics calibration curves.')
+    print('  window=3 (default) provides better accuracy and stability than window=1')
+    print('  with minimal sensitivity loss at typical MS proteomics SNR levels.')
     print(SEP)
     print()
 
 
-# ---------------------------------------------------------------------------
-# JSON helper (inline — this script does not import from _helpers)
-# ---------------------------------------------------------------------------
-
-def _json_safe(obj):
-    """Recursively convert *obj* to a JSON-serialisable form.
-
-    * numpy integers / floats are cast to Python int / float.
-    * Non-finite floats (inf, nan) become ``None``.
-    * numpy arrays are converted via ``tolist()``.
-    """
-    import math
-    if isinstance(obj, dict):
-        return {k: _json_safe(v) for k, v in obj.items()}
-    if isinstance(obj, (list, tuple)):
-        return [_json_safe(v) for v in obj]
-    if isinstance(obj, float):
-        return None if not math.isfinite(obj) else obj
-    if isinstance(obj, np.integer):
-        return int(obj)
-    if isinstance(obj, np.floating):
-        return None if not np.isfinite(obj) else float(obj)
-    if isinstance(obj, np.ndarray):
-        return _json_safe(obj.tolist())
-    return obj
+# Use _helpers_json_safe (imported from _helpers) — avoids duplicate definition
+_json_safe = _helpers_json_safe
 
 
 # ---------------------------------------------------------------------------
@@ -683,12 +530,10 @@ def _json_safe(obj):
 
 def _parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(
-        description='LOQ window-rule robustness simulation benchmark'
+        description='PiecewiseWLS LOQ sensitivity, accuracy, and stability benchmark'
     )
     p.add_argument('--n_curves', type=int, default=50,
                    help='Calibration curves per SNR level / accuracy exp (default: 50)')
-    p.add_argument('--n_profiles', type=int, default=3000,
-                   help='CV profiles for FDR experiment (default: 3000)')
     p.add_argument('--n_seeds', type=int, default=150,
                    help='Bootstrap seeds for stability experiment (default: 150)')
     p.add_argument('--bootreps', type=int, default=100,
@@ -699,10 +544,10 @@ def _parse_args() -> argparse.Namespace:
                    help='CV threshold for LOQ (default: 0.20)')
     p.add_argument('--snr_levels', type=str,
                    default='1,2,3,5,8,15,30',
-                   help='Comma-separated SNR values for Exp 2')
+                   help='Comma-separated SNR values for Exp 1')
     p.add_argument('--seed', type=int, default=42, help='Master RNG seed')
     p.add_argument('--quick', action='store_true',
-                   help='Fast smoke-test mode: n_curves=15, n_profiles=500, n_seeds=30')
+                   help='Fast smoke-test mode: n_curves=15, n_seeds=30')
     p.add_argument('--save', type=str, default=None, metavar='PATH',
                    help='Write JSON results to PATH (e.g. tmp/results/bench_simulation.json)')
     return p.parse_args()
@@ -716,30 +561,25 @@ def main() -> None:
     args = _parse_args()
 
     if args.quick:
-        args.n_curves       = 15
-        args.n_profiles     = 500
-        args.n_seeds        = 30
+        args.n_curves        = 15
+        args.n_seeds         = 30
         args.oracle_bootreps = 150
 
     cv_thresh  = args.cv_thresh
     snr_levels = [float(s) for s in args.snr_levels.split(',')]
 
-    print('LOQ Rule Robustness Simulation')
+    print('PiecewiseWLS LOQ Sensitivity, Accuracy, and Stability')
+    print('  (FDR/null experiments → bench_window_rules.py)')
     print(f'  Rules compared  : {", ".join(RULES)}')
     print(f'  cv_thresh       : {cv_thresh}')
     print(f'  bootreps        : {args.bootreps}  (primary)')
     print(f'  oracle_bootreps : {args.oracle_bootreps}')
     print(f'  n_curves        : {args.n_curves}  (per SNR level / accuracy exp)')
-    print(f'  n_profiles      : {args.n_profiles}  (for FDR exp)')
     print(f'  n_seeds         : {args.n_seeds}  (for stability exp)')
     print(f'  SNR levels      : {snr_levels}')
     print()
 
-    print('Experiment 1: FDR profile (synthetic CV profiles) ...', end='', flush=True)
-    true_cvs, fdr_results = experiment_fdr(args.n_profiles, cv_thresh, args.seed)
-    print(' done')
-
-    print('Experiment 2: Sensitivity vs SNR (fitting calibration curves) ...',
+    print('Experiment 1: Sensitivity vs SNR (fitting calibration curves) ...',
           flush=True)
     sens_results = experiment_sensitivity(
         args.n_curves, args.bootreps, args.oracle_bootreps,
@@ -747,30 +587,28 @@ def main() -> None:
     )
     print(' done')
 
-    print('Experiment 3: Accuracy vs oracle ...', end='', flush=True)
+    print('Experiment 2: Accuracy vs oracle ...', end='', flush=True)
     acc_results = experiment_accuracy(
         args.n_curves, args.bootreps, args.oracle_bootreps, cv_thresh, args.seed
     )
     print(' done')
 
-    print('Experiment 4: Bootstrap stability ...', end='', flush=True)
+    print('Experiment 3: Bootstrap stability ...', end='', flush=True)
     stab_results = experiment_stability(
         args.n_seeds, args.bootreps, cv_thresh, args.seed
     )
     print(' done')
 
-    _print_exp1(true_cvs, fdr_results, cv_thresh)
-    _print_exp2(sens_results, snr_levels)
-    _print_exp3(acc_results)
-    _print_exp4(stab_results)
-    _print_summary(true_cvs, fdr_results, acc_results, stab_results, cv_thresh)
+    _print_exp1(sens_results, snr_levels)
+    _print_exp2(acc_results)
+    _print_exp3(stab_results)
+    _print_summary(sens_results, acc_results, stab_results)
 
     if args.save:
         import datetime
         results_dict = {
             'meta': {
                 'n_curves':        args.n_curves,
-                'n_profiles':      args.n_profiles,
                 'n_seeds':         args.n_seeds,
                 'bootreps':        args.bootreps,
                 'oracle_bootreps': args.oracle_bootreps,
@@ -781,26 +619,24 @@ def main() -> None:
                 'timestamp':       datetime.datetime.now().isoformat(),
             },
             'experiment_1': {
-                'true_cvs': true_cvs.tolist(),
-                # keys are numpy float64 → convert to plain float strings
+                'description': 'Sensitivity (TPR) vs SNR using oracle comparison',
+                'snr_levels': snr_levels,
                 'results': {
-                    f'{float(k):.8g}': v
-                    for k, v in fdr_results.items()
+                    f'{snr:.8g}': {
+                        'n_lod_ok':     sens_results[snr]['n_lod_ok'],
+                        'n_oracle_fin': sens_results[snr]['n_oracle_fin'],
+                        **{name: sens_results[snr][name] for name in RULES},
+                    }
+                    for snr in snr_levels
                 },
             },
             'experiment_2': {
-                f'{snr:.8g}': {
-                    'n_lod_ok':     sens_results[snr]['n_lod_ok'],
-                    'n_oracle_fin': sens_results[snr]['n_oracle_fin'],
-                    **{name: sens_results[snr][name] for name in RULES},
-                }
-                for snr in snr_levels
+                'description': 'LOQ estimate accuracy vs oracle (TP pairs, SNR=5)',
+                'errors_per_rule': {name: errs for name, errs in acc_results.items()},
             },
             'experiment_3': {
-                name: errs for name, errs in acc_results.items()
-            },
-            'experiment_4': {
-                name: loqs for name, loqs in stab_results.items()
+                'description': 'Bootstrap stability: LOQ CV across seeds, same data',
+                'loq_lists_per_rule': {name: loqs for name, loqs in stab_results.items()},
             },
         }
         out = Path(args.save)
