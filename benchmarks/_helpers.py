@@ -19,7 +19,10 @@ Repository layout assumed:
 """
 from __future__ import annotations
 
+import contextlib
 import importlib.util
+import io
+import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -77,6 +80,27 @@ def load_original_cv() -> Any:
 
 # Make loqculate importable as soon as this helper is imported
 _ensure_package_on_path()
+
+
+# ---------------------------------------------------------------------------
+# Context manager to suppress stdout/stderr from legacy scripts
+# ---------------------------------------------------------------------------
+
+@contextlib.contextmanager
+def suppress_stdio():
+    """Temporarily redirect stdout and stderr to devnull.
+
+    Use this when calling legacy scripts (loq_by_cv.py, calculate-loq.py) that
+    print progress messages which clutter benchmark output.
+    """
+    devnull = open(os.devnull, "w")
+    old_stdout, old_stderr = sys.stdout, sys.stderr
+    try:
+        sys.stdout, sys.stderr = devnull, devnull
+        yield
+    finally:
+        sys.stdout, sys.stderr = old_stdout, old_stderr
+        devnull.close()
 
 
 # ---------------------------------------------------------------------------

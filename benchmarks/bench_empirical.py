@@ -56,7 +56,7 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).parent))   # benchmarks/ on path
 from _helpers import (
     DEMO_DATA, DEMO_MAP,
-    load_original_cv, _json_safe, _ci95,
+    load_original_cv, _json_safe, _ci95, suppress_stdio,
 )
 
 from loqculate.io import read_calibration_data
@@ -112,15 +112,11 @@ def _run_original_cv(
     """
     with tempfile.TemporaryDirectory() as tmpdir:
         orig_mod.output_dir = tmpdir
-        _old_stderr = sys.stderr
-        sys.stderr = io.StringIO()
-        try:
+        with suppress_stdio():
             df = orig_mod.read_input(str(DEMO_DATA), str(DEMO_MAP))
             t0 = time.perf_counter()
             result_df = orig_mod.calculate_LOQ_byCV(df)
             elapsed = time.perf_counter() - t0
-        finally:
-            sys.stderr = _old_stderr
 
     loqs: Dict[str, Optional[float]] = {}
     for pep, grp in result_df.groupby('peptide'):
