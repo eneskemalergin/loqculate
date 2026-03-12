@@ -88,13 +88,15 @@ def _load_real_peptides() -> dict[str, tuple[np.ndarray, np.ndarray]]:
     return out
 
 
-def _run_loqculate(peptides: dict, bootreps: int, std_mult: float, cv_thresh: float):
+def _run_loqculate(peptides: dict, bootreps: int, std_mult: float, cv_thresh: float,
+                   sliding_window: int = 3):
     """Return (results_dict, elapsed, models_dict). models kept for split diagnostics."""
     results, models = {}, {}
     t0 = time.perf_counter()
     for pep, (x, y) in peptides.items():
         try:
-            m = PiecewiseWLS(init_method='legacy', n_boot_reps=bootreps, seed=42)
+            m = PiecewiseWLS(init_method='legacy', n_boot_reps=bootreps, seed=42,
+                             sliding_window=sliding_window)
             m.fit(x, y)
             results[pep] = {'lod': m.lod(std_mult), 'loq': m.loq(cv_thresh),
                             'slope': m.params_['slope'],
@@ -379,16 +381,29 @@ def main():
     peptides = _load_real_peptides()
     print(f'  {len(peptides)} peptides.')
 
-    print(f'\nRunning loqculate  (bootreps={args.bootreps}) ...')
+    print(f'\nRunning loqculate w=3  (bootreps={args.bootreps}) ...')
     orig_t_runs: list = []
     new_t_runs: list = []
     new_res, t_new, new_models = _run_loqculate(
-        peptides, args.bootreps, args.std_mult, args.cv_thresh)
+        peptides, args.bootreps, args.std_mult, args.cv_thresh, sliding_window=3)
     new_t_runs.append(t_new)
     print(f'  rep  1/{args.n_reps}: {t_new:.2f}s')
     for i in range(1, args.n_reps):
-        _, t, _ = _run_loqculate(peptides, args.bootreps, args.std_mult, args.cv_thresh)
+        _, t, _ = _run_loqculate(peptides, args.bootreps, args.std_mult, args.cv_thresh,
+                                 sliding_window=3)
         new_t_runs.append(t)
+        print(f'  rep {i+1:2d}/{args.n_reps}: {t:.2f}s')
+
+    print(f'\nRunning loqculate w=1  (bootreps={args.bootreps}) ...')
+    w1_t_runs: list = []
+    w1_res, t_w1, w1_models = _run_loqculate(
+        peptides, args.bootreps, args.std_mult, args.cv_thresh, sliding_window=1)
+    w1_t_runs.append(t_w1)
+    print(f'  rep  1/{args.n_reps}: {t_w1:.2f}s')
+    for i in range(1, args.n_reps):
+        _, t, _ = _run_loqculate(peptides, args.bootreps, args.std_mult, args.cv_thresh,
+                                 sliding_window=1)
+        w1_t_runs.append(t)
         print(f'  rep {i+1:2d}/{args.n_reps}: {t:.2f}s')
 
     print(f'Running original  (bootreps={args.bootreps}) ...')
@@ -403,13 +418,30 @@ def main():
 
     n = len(peptides)
     print(f'\n{"=" * 72}')
-    print(f'  One-to-one comparison: {DEMO_DATA.name}  ({n} peptides)')
+    print(f'  Three-way comparison: {DEMO_DATA.name}  ({n} peptides)')
     print(f'{"=" * 72}')
-    lod_cats, loq_cats = _print_table(peptides, orig_res, new_res, args.lod_tol, args.loq_tol)
-    _print_summary(lod_cats, loq_cats, orig_res, new_res,
+
+    # --- orig vs w=3 (combined effect — what users see) ---
+    print(f'\n--- orig vs lq(w=3) [combined: optimizer + window] ---')
+    lod_cats_ow3, loq_cats_ow3 = _print_table(peptides, orig_res, new_res, args.lod_tol, args.loq_tol)
+    _print_summary(lod_cats_ow3, loq_cats_ow3, orig_res, new_res,
                    args.lod_tol, args.loq_tol, orig_t_runs, new_t_runs, n)
-    _diagnose_splits(peptides, orig_res, new_res, new_models, loq_cats,
+    _diagnose_splits(peptides, orig_res, new_res, new_models, loq_cats_ow3,
                      args.cv_thresh, window=3)
+
+    # --- orig vs w=1 (optimizer effect only — same single-point LOQ rule) ---
+    print(f'\n--- orig vs lq(w=1) [optimizer effect only: LM→TRF, same LOQ rule] ---')
+    lod_cats_ow1, loq_cats_ow1 = _print_table(peptides, orig_res, w1_res, args.lod_tol, args.loq_tol)
+    _print_summary(lod_cats_ow1, loq_cats_ow1, orig_res, w1_res,
+                   args.lod_tol, args.loq_tol, orig_t_runs, w1_t_runs, n)
+    _diagnose_splits(peptides, orig_res, w1_res, w1_models, loq_cats_ow1,
+                     args.cv_thresh, window=1)
+
+    # --- w=1 vs w=3 (window effect only — same optimizer) ---
+    print(f'\n--- lq(w=1) vs lq(w=3) [window effect only: same optimizer, different LOQ rule] ---')
+    lod_cats_w13, loq_cats_w13 = _print_table(peptides, w1_res, new_res, args.lod_tol, args.loq_tol)
+    _print_summary(lod_cats_w13, loq_cats_w13, w1_res, new_res,
+                   args.lod_tol, args.loq_tol, w1_t_runs, new_t_runs, n)
 
     if args.save:
         import datetime
@@ -426,14 +458,25 @@ def main():
 
         per_pep = {}
         for pep in sorted(peptides):
-            r1, r2 = orig_res.get(pep, {}), new_res.get(pep, {})
+            r_orig = orig_res.get(pep, {})
+            r_w1   = w1_res.get(pep, {})
+            r_w3   = new_res.get(pep, {})
             per_pep[pep] = {
-                'orig_lod':      r1.get('lod', None),
-                'lq_lod':        r2.get('lod', None),
-                'orig_loq':      r1.get('loq', None),
-                'lq_loq':        r2.get('loq', None),
-                'lod_category':  lod_cats.get(pep, ''),
-                'loq_category':  loq_cats.get(pep, ''),
+                'orig_lod':        r_orig.get('lod', None),
+                'orig_loq':        r_orig.get('loq', None),
+                'lq_w1_lod':       r_w1.get('lod', None),
+                'lq_w1_loq':       r_w1.get('loq', None),
+                'lq_w3_lod':       r_w3.get('lod', None),
+                'lq_w3_loq':       r_w3.get('loq', None),
+                # orig ↔ w=3 (combined effect)
+                'lod_cat_orig_w3': lod_cats_ow3.get(pep, ''),
+                'loq_cat_orig_w3': loq_cats_ow3.get(pep, ''),
+                # orig ↔ w=1 (optimizer effect only)
+                'lod_cat_orig_w1': lod_cats_ow1.get(pep, ''),
+                'loq_cat_orig_w1': loq_cats_ow1.get(pep, ''),
+                # w=1 ↔ w=3 (window effect only)
+                'lod_cat_w1_w3':   lod_cats_w13.get(pep, ''),
+                'loq_cat_w1_w3':   loq_cats_w13.get(pep, ''),
             }
         results = {
             'meta': {
@@ -445,18 +488,25 @@ def main():
                 'n_peptides': n,
                 'dataset':    DEMO_DATA.name,
                 't_orig_runs_s':  orig_t_runs,
-                't_new_runs_s':   new_t_runs,
+                't_w1_runs_s':    w1_t_runs,
+                't_w3_runs_s':    new_t_runs,
                 't_orig_mean_s':  float(np.mean(orig_t_runs)),
-                't_new_mean_s':   float(np.mean(new_t_runs)),
+                't_w1_mean_s':    float(np.mean(w1_t_runs)),
+                't_w3_mean_s':    float(np.mean(new_t_runs)),
                 't_orig_ci95_s':  _ci95(orig_t_runs),
-                't_new_ci95_s':   _ci95(new_t_runs),
+                't_w1_ci95_s':    _ci95(w1_t_runs),
+                't_w3_ci95_s':    _ci95(new_t_runs),
                 'n_reps':     args.n_reps,
                 'timestamp':  datetime.datetime.now().isoformat(),
             },
             'per_peptide': per_pep,
             'summary': {
-                'lod': _cat_counts(lod_cats),
-                'loq': _cat_counts(loq_cats),
+                'lod_orig_vs_w3': _cat_counts(lod_cats_ow3),
+                'loq_orig_vs_w3': _cat_counts(loq_cats_ow3),
+                'lod_orig_vs_w1': _cat_counts(lod_cats_ow1),
+                'loq_orig_vs_w1': _cat_counts(loq_cats_ow1),
+                'lod_w1_vs_w3':   _cat_counts(lod_cats_w13),
+                'loq_w1_vs_w3':   _cat_counts(loq_cats_w13),
             },
         }
         out = Path(args.save)

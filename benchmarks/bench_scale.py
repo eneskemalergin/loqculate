@@ -52,11 +52,12 @@ import numpy as np
 
 # --- path setup ---------------------------------------------------------
 sys.path.insert(0, str(Path(__file__).parent))   # benchmarks/ on path
-from _helpers import DEMO_DATA, DEMO_MAP, FULL_DATA, FULL_MAP, OLD_DIR, load_original_calc, _json_safe, _ci95, _rss_mb
+from _helpers import DEMO_DATA, DEMO_MAP, FULL_DATA, FULL_MAP, OLD_DIR, load_original_calc, load_original_cv, _json_safe, _ci95, _rss_mb
 
 # loqculate package is at repo root — _helpers already adds it to sys.path
 from loqculate.io import read_calibration_data
 from loqculate.models import PiecewiseWLS
+from loqculate.models.cv_empirical import EmpiricalCV
 
 
 # -----------------------------------------------------------------------
@@ -119,6 +120,32 @@ def _run_loqculate_parallel(
     with mp.Pool(processes=workers) as pool:
         results = pool.map(_loqculate_fit_one, mp_args, chunksize=chunk_size)
     return results, time.perf_counter() - t0
+
+
+# -----------------------------------------------------------------------
+# EmpiricalCV bulk path (no multiprocessing — vectorized across all peptides)
+# -----------------------------------------------------------------------
+
+def _run_empcv_bulk(
+    data_peptides: np.ndarray, data_concs: np.ndarray, data_areas: np.ndarray,
+    selected_peps: np.ndarray, sliding_window: int = 3,
+) -> Tuple[List[Tuple], float]:
+    """Run EmpiricalCV.compute_loqs_bulk on selected peptides. Returns (results, elapsed)."""
+    # Subset data to selected peptides
+    mask = np.isin(data_peptides, selected_peps)
+    peps_sub = data_peptides[mask]
+    concs_sub = data_concs[mask]
+    areas_sub = data_areas[mask]
+
+    t0 = time.perf_counter()
+    loq_dict = EmpiricalCV.compute_loqs_bulk(
+        peps_sub, concs_sub, areas_sub,
+        sliding_window=sliding_window,
+    )
+    elapsed = time.perf_counter() - t0
+
+    results = [(pep, np.inf, loq, None) for pep, loq in loq_dict.items()]
+    return results, elapsed
 
 
 # -----------------------------------------------------------------------
@@ -235,6 +262,50 @@ def _measure_original_mem_mb(orig_mod, mem_args: List[Tuple]) -> float:
                     pass
     rss_after = _rss_mb()
     return max(0.0, rss_after - rss_before)
+
+
+def _measure_empcv_mem_mb(
+    data_peptides: np.ndarray, data_concs: np.ndarray, data_areas: np.ndarray,
+    selected_peps: np.ndarray, n_mem: int,
+) -> float:
+    """Return RSS delta (MB) while EmpiricalCV.compute_loqs_bulk processes n_mem peptides."""
+    peps_sub = selected_peps[:n_mem]
+    mask = np.isin(data_peptides, peps_sub)
+    gc.collect()
+    rss_before = _rss_mb()
+    EmpiricalCV.compute_loqs_bulk(
+        data_peptides[mask], data_concs[mask], data_areas[mask],
+        sliding_window=3,
+    )
+    rss_after = _rss_mb()
+    return max(0.0, rss_after - rss_before)
+
+
+def _run_origcv_bulk(origcv_mod, data_path, map_path) -> Tuple[List[Tuple], float]:
+    """Run loq_by_cv.py on the entire dataset; return (results_list, elapsed).
+
+    loq_by_cv.py processes ALL peptides at once via pandas groupby.
+    Returns list of (pep, inf, loq, error) tuples matching the per-peptide format.
+    """
+    import io as _io
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmpdir:
+        origcv_mod.output_dir = tmpdir
+        _old_stderr = sys.stderr
+        sys.stderr = _io.StringIO()
+        try:
+            df = origcv_mod.read_input(str(data_path), str(map_path))
+            t0 = time.perf_counter()
+            result_df = origcv_mod.calculate_LOQ_byCV(df)
+            elapsed = time.perf_counter() - t0
+        finally:
+            sys.stderr = _old_stderr
+    results = []
+    for pep, grp in result_df.groupby('peptide'):
+        val = grp['loq'].iloc[0]
+        loq = np.inf if (isinstance(val, float) and np.isnan(val)) else float(val)
+        results.append((str(pep), np.inf, loq, None))
+    return results, elapsed
 
 
 # -----------------------------------------------------------------------
@@ -457,6 +528,10 @@ def main() -> None:
     new_mem_mb = _measure_loqculate_mem_mb(mem_args)
     print(f' Δ{new_mem_mb:.2f} MB total  ({new_mem_mb/n_mem:.4f} MB/pep)')
 
+    print('  Measuring EmpiricalCV RSS delta ...', end='', flush=True)
+    empcv_mem_mb = _measure_empcv_mem_mb(data.peptide, data.concentration, data.area, selected, n_mem)
+    print(f' Δ{empcv_mem_mb:.2f} MB total  ({empcv_mem_mb/n_mem:.4f} MB/pep)')
+
     # ------------------------------------------------------------------ #
     # Throughput phase (parallel)
     # ------------------------------------------------------------------ #
@@ -479,6 +554,26 @@ def main() -> None:
         new_res, t = _run_loqculate_parallel(mp_args, args.workers, args.chunk_size)
         new_t_runs.append(t)
         print(f'    rep {i+1:2d}/{n_reps}: {t:.2f}s  ({n/t:.1f} pep/s)', flush=True)
+
+    empcv_t_runs: List[float] = []
+    empcv_res = []
+    print('  Running EmpiricalCV (bulk vectorized) ...')
+    for i in range(n_reps):
+        empcv_res, t = _run_empcv_bulk(
+            data.peptide, data.concentration, data.area,
+            selected, sliding_window=3,
+        )
+        empcv_t_runs.append(t)
+        print(f'    rep {i+1:2d}/{n_reps}: {t:.2f}s  ({len(empcv_res)/t:.1f} pep/s)', flush=True)
+
+    origcv_t_runs: List[float] = []
+    origcv_res = []
+    print('  Running loq_by_cv.py (bulk) ...')
+    origcv_mod = load_original_cv()
+    for i in range(n_reps):
+        origcv_res, t = _run_origcv_bulk(origcv_mod, data_path, map_path)
+        origcv_t_runs.append(t)
+        print(f'    rep {i+1:2d}/{n_reps}: {t:.2f}s  ({len(origcv_res)/t:.1f} pep/s)', flush=True)
 
     # ------------------------------------------------------------------ #
     # LOQ yield by concentration band (loqculate results)
@@ -509,6 +604,26 @@ def main() -> None:
         loq_yield=loq_yield,
     )
 
+    # --- EmpiricalCV / loq_by_cv summary ---
+    t_empcv_mean  = float(np.mean(empcv_t_runs))
+    t_origcv_mean = float(np.mean(origcv_t_runs))
+    empcv_ci  = _ci95(empcv_t_runs)
+    origcv_ci = _ci95(origcv_t_runs)
+    n_empcv_finite_loq  = sum(1 for r in empcv_res if np.isfinite(r[2]))
+    n_origcv_finite_loq = sum(1 for r in origcv_res if np.isfinite(r[2]))
+    print(f'  EmpiricalCV / loq_by_cv comparison')
+    print(f'  {"loq_by_cv":>14}: {t_origcv_mean:.2f} ± {origcv_ci:.2f} s  '
+          f'({len(origcv_res)/t_origcv_mean:.1f} pep/s)  '
+          f'LOQs: {n_origcv_finite_loq}/{len(origcv_res)}')
+    print(f'  {"EmpiricalCV":>14}: {t_empcv_mean:.2f} ± {empcv_ci:.2f} s  '
+          f'({n/t_empcv_mean:.1f} pep/s)  '
+          f'LOQs: {n_empcv_finite_loq}/{n}')
+    print(f'  {"RSS (EmpCV)":>14}: {empcv_mem_mb/n_mem:.4f} MB/pep  (Δ {empcv_mem_mb:.1f} MB)')
+    if t_empcv_mean > 0:
+        spd_emp = t_origcv_mean / t_empcv_mean
+        print(f'  EmpCV speedup over loq_by_cv: {spd_emp:.2f}x')
+    print()
+
     if args.save:
         import datetime
 
@@ -534,6 +649,15 @@ def main() -> None:
         speedup     = t_orig_mean / t_new_mean if t_new_mean > 0 else None
         tp_orig     = n / t_orig_mean if t_orig_mean > 0 else None
         tp_new      = n / t_new_mean  if t_new_mean  > 0 else None
+
+        t_empcv_m   = float(np.mean(empcv_t_runs))
+        t_origcv_m  = float(np.mean(origcv_t_runs))
+        empcv_ci95  = _ci95(empcv_t_runs)
+        origcv_ci95 = _ci95(origcv_t_runs)
+        tp_empcv    = n / t_empcv_m if t_empcv_m > 0 else None
+        tp_origcv   = len(origcv_res) / t_origcv_m if t_origcv_m > 0 else None
+        speedup_emp = t_origcv_m / t_empcv_m if t_empcv_m > 0 else None
+
         save_results = {
             'meta': {
                 'dataset':    data_path.name,
@@ -559,6 +683,17 @@ def main() -> None:
                 'pep_per_s_new':   tp_new,
                 'speedup':         speedup,
             },
+            'throughput_emp': {
+                't_origcv_runs_s':  origcv_t_runs,
+                't_empcv_runs_s':   empcv_t_runs,
+                't_origcv_mean_s':  t_origcv_m,
+                't_empcv_mean_s':   t_empcv_m,
+                't_origcv_ci95_s':  origcv_ci95,
+                't_empcv_ci95_s':   empcv_ci95,
+                'pep_per_s_origcv': tp_origcv,
+                'pep_per_s_empcv':  tp_empcv,
+                'speedup_emp':      speedup_emp,
+            },
             'memory': {
                 'orig_mb_total':       orig_mem_mb,
                 'new_mb_total':        new_mem_mb,
@@ -566,8 +701,20 @@ def main() -> None:
                 'new_mb_per_pep':      new_mem_mb  / n_mem if n_mem > 0 else None,
                 'ratio_orig_over_new': orig_mem_mb / new_mem_mb if new_mem_mb > 0 else None,
             },
-            'coverage_orig':  _agg(orig_res),
-            'coverage_new':   _agg(new_res),
+            'memory_emp': {
+                'empcv_mb_total':      empcv_mem_mb,
+                'empcv_mb_per_pep':    empcv_mem_mb / n_mem if n_mem > 0 else None,
+            },
+            'coverage_orig':   _agg(orig_res),
+            'coverage_new':    _agg(new_res),
+            'coverage_empcv':  {
+                'n_finite_loq':  n_empcv_finite_loq,
+                'n_total':       n,
+            },
+            'coverage_origcv': {
+                'n_finite_loq':  n_origcv_finite_loq,
+                'n_total':       len(origcv_res),
+            },
             'loq_yield': {
                 str(c): {'n_quant': info['n_quant'], 'frac': info['frac']}
                 for c, info in sorted(loq_yield.items())

@@ -407,6 +407,86 @@ def experiment_lod_bias(
 
 
 # ---------------------------------------------------------------------------
+# Exp 6 — EmpiricalCV LOQ Concentration Accuracy (grid-resolution bias)
+# ---------------------------------------------------------------------------
+
+def experiment_empcv_accuracy(
+    n_profiles: int,
+    cv_thresh: float,
+    n_reps_list: List[int],
+    seed: int,
+) -> Dict:
+    """Measure EmpiricalCV LOQ accuracy when a true LOQ exists.
+
+    Step-function CV: cv_true = 2× cv_thresh before the true LOQ concentration,
+    0.5× cv_thresh from there onward.  The true LOQ = concs[5].
+
+    EmpiricalCV can only report LOQ at a measured concentration.  This experiment
+    measures: (a) fraction of runs where LOQ exactly matches the true LOQ
+    concentration, (b) mean signed error (positive = conservative), and
+    (c) fraction within one concentration step of the truth.
+    """
+    rng = np.random.default_rng(seed + 600)
+    concs = np.array([c for c in SIM_CONCS if c > 0], dtype=float)
+    true_loq_idx  = 5
+    true_loq_conc = concs[true_loq_idx]
+    cv_high = cv_thresh * 2.0
+    cv_low  = cv_thresh * 0.5
+    window  = 3   # production default
+
+    results_per_nreps: Dict[int, Dict] = {}
+
+    for n_reps in n_reps_list:
+        loq_estimates: List[float] = []
+        for _ in range(n_profiles):
+            cv_samples = np.array([
+                _sample_cv_raw(cv_high if c < true_loq_conc else cv_low, n_reps, rng)
+                for c in concs
+            ])
+            loq_val = find_loq_threshold(concs, cv_samples, cv_thresh=cv_thresh, window=window)
+            if np.isfinite(loq_val):
+                loq_estimates.append(float(loq_val))
+
+        n_both_finite = len(loq_estimates)
+        if n_both_finite == 0:
+            results_per_nreps[n_reps] = {
+                'n_both_finite': 0,
+                'mean_signed_error': None,
+                'mean_abs_error':    None,
+                'frac_exact_conc_match': 0.0,
+                'frac_within_one_step':  0.0,
+            }
+            continue
+
+        errors_signed = [est - true_loq_conc for est in loq_estimates]
+        errors_abs    = [abs(e) for e in errors_signed]
+        # Exact match = LOQ is exactly the true LOQ concentration
+        n_exact = sum(1 for est in loq_estimates if abs(est - true_loq_conc) < 1e-9)
+        # Within one step = LOQ is within one concentration step of the truth
+        if true_loq_idx + 1 < len(concs):
+            step = concs[true_loq_idx + 1] - concs[true_loq_idx]
+        else:
+            step = concs[true_loq_idx] - concs[true_loq_idx - 1]
+        n_within_step = sum(1 for est in loq_estimates
+                           if abs(est - true_loq_conc) <= step + 1e-9)
+
+        results_per_nreps[n_reps] = {
+            'n_both_finite':         n_both_finite,
+            'mean_signed_error':     float(np.mean(errors_signed)),
+            'mean_abs_error':        float(np.mean(errors_abs)),
+            'frac_exact_conc_match': n_exact / n_both_finite,
+            'frac_within_one_step':  n_within_step / n_both_finite,
+        }
+
+    return {
+        'true_loq_conc': true_loq_conc,
+        'window':        window,
+        'n_reps_list':   n_reps_list,
+        'results_per_nreps': results_per_nreps,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Printing
 # ---------------------------------------------------------------------------
 
@@ -505,6 +585,27 @@ def _print_exp5(results: Dict) -> None:
         print(f'  {snr:>6.1f}  {len(arr):>5}  {n_fail:>6}  '
               f'{np.mean(arr):>+9.1%}  {np.mean(np.abs(arr)):>9.1%}  '
               f'{np.median(arr):>+7.1%}  {np.std(arr):>7.1%}')
+    print()
+
+
+def _print_exp6(results: Dict) -> None:
+    print(f'\n{"=" * 80}')
+    print('  EXP 6 — EmpiricalCV LOQ Concentration Accuracy  (grid-resolution bias)')
+    print(f'  True LOQ = {results["true_loq_conc"]:.4g},  window={results["window"]}')
+    print('  EmpiricalCV can only report LOQ at measured concentrations (discrete grid).')
+    print('=' * 80)
+    print(f'  {"n_reps":>6}  {"n_finite":>9}  {"mean_err":>10}  {"mean|err|":>10}  '
+          f'{"exact":>7}  {"±1 step":>8}')
+    print('  ' + '-' * 60)
+    for n_reps in results['n_reps_list']:
+        r = results['results_per_nreps'][n_reps]
+        n_fin = r['n_both_finite']
+        if n_fin == 0:
+            print(f'  {n_reps:>6}  {0:>9}  (no finite LOQ calls)')
+            continue
+        print(f'  {n_reps:>6}  {n_fin:>9}  {r["mean_signed_error"]:>+10.3g}  '
+              f'{r["mean_abs_error"]:>10.3g}  {r["frac_exact_conc_match"]:>6.1%}  '
+              f'{r["frac_within_one_step"]:>7.1%}')
     print()
 
 
@@ -619,11 +720,16 @@ def main() -> None:
     lod_bias = experiment_lod_bias(n_lod_curves, bootreps, seed)
     print(' done')
 
+    print('Exp 6: EmpiricalCV LOQ accuracy (grid-resolution) ...', end='', flush=True)
+    empcv_accuracy = experiment_empcv_accuracy(n_profiles, cv_thresh, n_reps_list, seed)
+    print(' done')
+
     _print_exp1(true_cvs, fdr_boot, cv_thresh)
     _print_exp2(fdr_emp, n_reps_list, cv_thresh)
     _print_exp3(tpr_emp, true_loq_conc, n_reps_list, cv_thresh)
     _print_exp4(thresh_sweep)
     _print_exp5(lod_bias)
+    _print_exp6(empcv_accuracy)
     _print_summary(true_cvs, fdr_boot, fdr_emp, thresh_sweep, lod_bias, cv_thresh, n_reps_list)
 
     if args.save:
@@ -682,6 +788,16 @@ def main() -> None:
                 'n_failed': {str(k): v for k, v in lod_bias['n_failed'].items()},
                 'errors': {
                     str(snr): errs for snr, errs in lod_bias['errors'].items()
+                },
+            },
+            'exp6_empcv_accuracy': {
+                'description': 'EmpiricalCV LOQ concentration accuracy (grid-resolution bias)',
+                'grid_resolution_note': 'EmpiricalCV LOQ is limited to measured concentration levels',
+                'true_loq_conc': empcv_accuracy['true_loq_conc'],
+                'window': empcv_accuracy['window'],
+                'n_reps_list': empcv_accuracy['n_reps_list'],
+                'results_per_nreps': {
+                    str(nr): r for nr, r in empcv_accuracy['results_per_nreps'].items()
                 },
             },
         }
