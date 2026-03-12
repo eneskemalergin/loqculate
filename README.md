@@ -9,10 +9,10 @@
 
 <table>
 <tr>
-  <td><a href="https://github.com/MatrixMatched-Project/loqculate/actions/workflows/ci.yml"><img src="https://github.com/MatrixMatched-Project/loqculate/actions/workflows/ci.yml/badge.svg" alt="CI"></a></td>
+  <td><a href="https://github.com/eneskemalergin/loqculate/actions/workflows/ci.yml"><img src="https://github.com/eneskemalergin/loqculate/actions/workflows/ci.yml/badge.svg" alt="CI"></a></td>
   <td><img src="https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-blue" alt="Python versions"></td>
   <td><a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a></td>
-  <td><a href="https://codecov.io/gh/MatrixMatched-Project/loqculate"><img src="https://codecov.io/gh/MatrixMatched-Project/loqculate/branch/main/graph/badge.svg" alt="codecov"></a></td>
+  <td><a href="https://codecov.io/gh/eneskemalergin/loqculate"><img src="https://codecov.io/gh/eneskemalergin/loqculate/branch/main/graph/badge.svg" alt="codecov"></a></td>
 </tr>
 </table>
 
@@ -22,7 +22,7 @@
 
 `loqculate` re-implements and extends the original Pino 2020 LOD/LOQ tools with:
 
-- A **sliding-window LOQ rule** (window=3 consecutive points, replacing single-point) that reduces FDR from ~100% to <5%
+- A **sliding-window LOQ rule** that reduces FDR from ~100% to <5%: LOQ is declared at $C_i$ only when $\mathrm{CV}(C_i)$, $\mathrm{CV}(C_{i+1})$, and $\mathrm{CV}(C_{i+2})$ all fall below `cv_thresh` — three consecutive passing concentrations, not one
 - A second model — **EmpiricalCV** — as a model-free alternative to PiecewiseWLS, very fast but higher FDR at low replicate counts (n < 5), similar to the original `loq_by_cv.py` script.
 - **Bootstrap guard** preventing infinite loops on zero-signal replicates
 - Support for **6 MS input formats**: DIA-NN report, DIA-NN pr_matrix, Spectronaut, Skyline, EncyclopeDIA, and generic CSV
@@ -59,6 +59,15 @@ loqculate fit data.tsv conc_map.csv --model cv_empirical
 loqculate compare data.tsv conc_map.csv --models piecewise_wls,cv_empirical
 ```
 
+`conc_map.csv` maps each raw filename to its calibration concentration:
+
+```csv
+filename,concentration
+sample_1ng_rep1.raw,1.0
+sample_1ng_rep2.raw,1.0
+sample_5ng_rep1.raw,5.0
+```
+
 ### Python API
 
 ```python
@@ -92,9 +101,28 @@ for peptide, x, y in data.iter_peptides():
 
 Fits a piecewise linear model (noise floor + linear signal) using weighted least squares. LOD and LOQ are derived from the fitted parameters. The sliding-window rule requires `window` consecutive concentration points below the CV threshold before declaring a LOQ.
 
+<details>
+<summary>Mathematical definition</summary>
+
+$$y = \begin{cases} \alpha & x \le \kappa \\ \alpha + \beta\,(x - \kappa) & x > \kappa \end{cases}$$
+
+$\alpha$ — noise floor, $\kappa$ — knot (signal onset), $\beta$ — slope in the quantifiable range.  
+Weights: $w_i = 1/\hat{y}_i^{\,2}$ (per-point). LOD and LOQ are derived from $\alpha$, $\beta$, and $\kappa$ under a CV threshold.
+
+</details>
+
 ### EmpiricalCV
 
 Computes CV directly from replicate measurements at each concentration level. LOQ is the lowest concentration where `window` consecutive CVs fall below `cv_thresh`. No parametric assumptions — faster than WLS, but FDR is higher at low replicate counts (n < 5).
+
+<details>
+<summary>Sliding-window LOQ rule</summary>
+
+$$\mathrm{LOQ} = \min\bigl\{C_i : \mathrm{CV}(C_i) < \tau \ \wedge\ \mathrm{CV}(C_{i+1}) < \tau \ \wedge\ \mathrm{CV}(C_{i+2}) < \tau\bigr\}$$
+
+$\tau$ is `cv_thresh` (default 0.20). Requiring three consecutive passing concentrations reduces single-point false discoveries from ~100% to <5%.
+
+</details>
 
 ---
 
@@ -144,10 +172,10 @@ Same piecewise/CV framework, no new model classes. Ends with a pip release after
 
 New curve families, model selection, performance, and publication-ready output.
 
-- [ ] **v0.6.0** — 4PL/5PL model (`FourPL`): $y = d + (a-d)/[1+(x/c)^b]$; LLOQ + ULOQ; FDA bioanalytical guidance compliant; auto-downgrades to piecewise when upper asymptote is unidentifiable
+- [ ] **v0.6.0** — 4PL/5PL model (`FourPL`): $y = d + (a-d)/[1+(x/c)^b]$; LLOQ + ULOQ; FDA bioanalytical guidance compliant; fitted via `scipy.optimize.curve_fit` (non-linear, unlike the current piecewise linear approach); auto-downgrades to piecewise when upper asymptote is unidentifiable
 - [ ] **v0.7.0** — model selection (`loqculate.selection`): AIC/BIC + approximate LOO-CV (PSIS-LOO, fast) per peptide; **auto-recommend** with explicit graceful degradation when models fail to converge or AIC penalty blows up on sparse curves
 - [ ] **v0.8.0** — performance: Numba `@njit` on closed-form solver + bootstrap (~3–10×); chunked parquet I/O (`pyarrow`); shared-memory multiprocessing for 100k+ peptide datasets; adaptive bootstrap early-stopping co-designed with Numba cost model
-- [ ] **v1.0.0** — stable public API contract; expanded plotting API (publication-ready diagnostics, waterfall, model-agreement scatter, yield curve — see [`plan/plotting_designs.md`](plan/plotting_designs.md)); exact LOO-CV and WAIC (requires Bayesian models, deferred to v1.x)
+- [ ] **v1.0.0** — stable public API contract; expanded plotting API (publication-ready diagnostics, waterfall, model-agreement scatter, yield curve); exact LOO-CV and WAIC (requires Bayesian models, deferred to v1.x)
 
 #### Phase 3 — Optional extensions (v1.x+)
 
@@ -175,7 +203,7 @@ If you use `loqculate` in your work, please cite both the original method paper 
                for mass-spectrometry calibration curves},
   year      = {2026},
   version   = {0.2.0},
-  url       = {https://github.com/MatrixMatched-Project/loqculate},
+  url       = {https://github.com/eneskemalergin/loqculate},
   license   = {MIT},
 }
 ```
