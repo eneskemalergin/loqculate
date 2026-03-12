@@ -101,28 +101,18 @@ for peptide, x, y in data.iter_peptides():
 
 Fits a piecewise linear model (noise floor + linear signal) using weighted least squares. LOD and LOQ are derived from the fitted parameters. The sliding-window rule requires `window` consecutive concentration points below the CV threshold before declaring a LOQ.
 
-<details>
-<summary>Mathematical definition</summary>
-
 $$y = \begin{cases} \alpha & x \le \kappa \\ \alpha + \beta\,(x - \kappa) & x > \kappa \end{cases}$$
 
-$\alpha$ — noise floor, $\kappa$ — knot (signal onset), $\beta$ — slope in the quantifiable range.  
+$\alpha$ — noise floor, $\kappa$ — knot (signal onset), $\beta$ — slope in the quantifiable range.
 Weights: $w_i = 1/\hat{y}_i^{\,2}$ (per-point). LOD and LOQ are derived from $\alpha$, $\beta$, and $\kappa$ under a CV threshold.
-
-</details>
 
 ### EmpiricalCV
 
 Computes CV directly from replicate measurements at each concentration level. LOQ is the lowest concentration where `window` consecutive CVs fall below `cv_thresh`. No parametric assumptions — faster than WLS, but FDR is higher at low replicate counts (n < 5).
 
-<details>
-<summary>Sliding-window LOQ rule</summary>
-
-$$\mathrm{LOQ} = \min\bigl\{C_i : \mathrm{CV}(C_i) < \tau \ \wedge\ \mathrm{CV}(C_{i+1}) < \tau \ \wedge\ \mathrm{CV}(C_{i+2}) < \tau\bigr\}$$
+$$\mathrm{LOQ} = \min\{ C_i : \mathrm{CV}(C_i) < \tau,\ \mathrm{CV}(C_{i+1}) < \tau,\ \mathrm{CV}(C_{i+2}) < \tau \}$$
 
 $\tau$ is `cv_thresh` (default 0.20). Requiring three consecutive passing concentrations reduces single-point false discoveries from ~100% to <5%.
-
-</details>
 
 ---
 
