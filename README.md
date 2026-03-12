@@ -20,10 +20,13 @@
 
 ---
 
-`loqculate` re-implements and extends the original Pino 2020 LOD/LOQ tools with:
+`loqculate` (v0.2.x) is a ground-up rewrite of the original Pino 2020 LOD/LOQ scripts with a validated, production-ready engine:
 
 - A **sliding-window LOQ rule** that reduces FDR from ~100% to <5%: LOQ is declared at $C_i$ only when $\mathrm{CV}(C_i)$, $\mathrm{CV}(C_{i+1})$, and $\mathrm{CV}(C_{i+2})$ all fall below `cv_thresh` — three consecutive passing concentrations, not one
-- A second model — **EmpiricalCV** — as a model-free alternative to PiecewiseWLS, very fast but higher FDR at low replicate counts (n < 5), similar to the original `loq_by_cv.py` script.
+- **11.4× lower memory** per peptide vs the original scripts (VmRSS, 1 000 peptide batch); throughput advantage scales with dataset size — batch is 3.3× faster at 10 000 peptides due to reduced GC pressure (see [`comparison_report.ipynb`](comparison_report.ipynb))
+- **TRF solver** (`scipy.optimize.least_squares`, method='trf') with guaranteed convergence bounds, replacing unconstrained curve_fit calls
+- A second model — **EmpiricalCV** — as a model-free alternative to PiecewiseWLS, very fast but higher FDR at low replicate counts (n < 5)
+- **`loqculate.compat`** — drop-in `OriginalWLS` / `OriginalCV` wrappers reproducing paper results without the legacy scripts (immediate next plan v0.2.2, currently live in `old/`)
 - **Bootstrap guard** preventing infinite loops on zero-signal replicates
 - Support for **6 MS input formats**: DIA-NN report, DIA-NN pr_matrix, Spectronaut, Skyline, EncyclopeDIA, and generic CSV
 - Parallel processing via `ProcessPoolExecutor` for whole-proteome throughput
@@ -84,14 +87,20 @@ for peptide, x, y in data.iter_peptides():
 
 ## Supported input formats
 
-| Format           | Auto-detected by                                   |
-| ---------------- | -------------------------------------------------- |
-| DIA-NN report    | `File.Name` + `Precursor.Id` columns               |
-| DIA-NN pr_matrix | `.pr_matrix.tsv` extension                         |
-| Spectronaut      | `R.FileName` + `PG.ProteinGroups` columns          |
-| Skyline          | `Peptide Sequence` + `Total Area Fragment` columns |
-| EncyclopeDIA     | `numFragments` column                              |
-| Generic CSV      | `peptide`, `concentration`, `area` columns         |
+| Format           | Auto-detected by                                   |           Needs `conc_map`?           |
+| ---------------- | -------------------------------------------------- | :-----------------------------------: |
+| DIA-NN report    | `File.Name` + `Precursor.Id` columns               |                  Yes                  |
+| DIA-NN pr_matrix | `.pr_matrix.tsv` extension                         |                  Yes                  |
+| Spectronaut      | `R.FileName` + `PG.ProteinGroups` columns          |                  Yes                  |
+| Skyline          | `Peptide Sequence` + `Total Area Fragment` columns |                  Yes                  |
+| EncyclopeDIA     | `numFragments` column                              |                  Yes                  |
+| Generic CSV      | `peptide`, `concentration`, `area` columns         | No — concentration column is embedded |
+
+**`conc_map.csv` rules:**
+
+- Two columns: `filename` (basename, no path) and `concentration` (numeric, same units as your calibration range).
+- Filenames that appear in the data but are missing from the map are **silently dropped** with a warning — check your logs if peptide counts look low.
+- All 6 formats except Generic CSV require a map; passing `None` raises a `ValueError` at load time.
 
 ---
 
@@ -104,7 +113,7 @@ Fits a piecewise linear model (noise floor + linear signal) using weighted least
 $$y = \begin{cases} \alpha & x \le \kappa \\ \alpha + \beta\,(x - \kappa) & x > \kappa \end{cases}$$
 
 $\alpha$ — noise floor, $\kappa$ — knot (signal onset), $\beta$ — slope in the quantifiable range.
-Weights: $w_i = 1/\hat{y}_i^{\,2}$ (per-point). LOD and LOQ are derived from $\alpha$, $\beta$, and $\kappa$ under a CV threshold.
+Weights: $w_i = 1/\sqrt{x_i}$ (user-facing, per-point); precision weight $W_i = w_i^2 = 1/x_i$. LOD and LOQ are derived from $\alpha$, $\beta$, and $\kappa$ under a CV threshold.
 
 ### EmpiricalCV
 
@@ -113,6 +122,35 @@ Computes CV directly from replicate measurements at each concentration level. LO
 $$\mathrm{LOQ} = \min\{ C_i : \mathrm{CV}(C_i) < \tau,\ \mathrm{CV}(C_{i+1}) < \tau,\ \mathrm{CV}(C_{i+2}) < \tau \}$$
 
 $\tau$ is `cv_thresh` (default 0.20). Requiring three consecutive passing concentrations reduces single-point false discoveries from ~100% to <5%.
+
+---
+
+## Configuration & defaults
+
+| Parameter   | Default         | Description                                                        |
+| ----------- | --------------- | ------------------------------------------------------------------ |
+| `cv_thresh` | `0.20`          | CV threshold; LOQ requires CV < this value                         |
+| `window`    | `3`             | Consecutive passing concentration points required                  |
+| `n_boot`    | `100`           | Bootstrap resamples for LOD/LOQ CI estimation                      |
+| `std_mult`  | `2`             | Noise-floor multiplier for LOD ($\mathrm{LOD} = \alpha + 2\sigma$) |
+| `model`     | `piecewise_wls` | Active model; also accepts `cv_empirical`                          |
+
+Pass these as CLI flags (`--cv_thresh 0.15`) or keyword arguments to `.fit()`.
+
+---
+
+## Benchmark summary
+
+Machine: AMD Ryzen 9 3950X, 32 threads. FDR measured on 300 simulated null curves across 4–14 concentration levels (window=3). Throughput measured on real DIA-NN data.
+
+| Metric                                      |   PiecewiseWLS   | EmpiricalCV |   OriginalWLS    | OriginalCV |
+| ------------------------------------------- | :--------------: | :---------: | :--------------: | :--------: |
+| Per-fit, single-threaded                    |     ~1.9 ms      |  ~0.02 ms   |     ~1.8 ms      |  ~0.03 ms  |
+| Null FDR, window=3 (range over n_conc 4–14) |       0–2%       |    2–18%    |       1–2%       |   64–99%   |
+| Memory per peptide (VmRSS)                  |     0.013 MB     |     ~0      |     0.151 MB     |     ~0     |
+| Throughput, 10 000 pep, 32 threads          | 41 s (241 pep/s) |   0.19 s    | 136 s (74 pep/s) |   0.65 s   |
+
+Key takeaway: WLS methods (PiecewiseWLS and OriginalWLS) have near-identical per-fit cost, but PiecewiseWLS is **3.3× faster in batch** due to 11.4× lower memory enabling better parallel utilisation. OriginalCV has catastrophically high FDR (64–99%) — the single-point rule is the problem, not the CV model itself. Full benchmark data and reproduction commands in [`comparison_report.ipynb`](comparison_report.ipynb).
 
 ---
 
@@ -154,7 +192,7 @@ Same piecewise/CV framework, no new model classes. Ends with a pip release after
 
 - [ ] **v0.2.x** — `loqculate.compat`: `OriginalWLS` / `OriginalCV` API wrappers; paper results reproducible without legacy scripts
 - [ ] **v0.3.0** — closed-form piecewise solver (`PiecewiseCF`): linear-algebra knot search, no optimizer, ~5–20× faster, identical results; formalizes $w_i$ (per-point) vs $W_i$ (per-concentration) weight convention as a hard invariant across all WLS models
-- [ ] **v0.4.0** — delta-method uncertainty (`--fast` flag): analytical LOQ CIs in $O(1)$; smooth models only — auto-falls back to bootstrap near the piecewise kink (non-differentiable $\max$)
+- [ ] **v0.4.0** — delta-method uncertainty (`--fast` flag, double-dash): analytical LOQ CIs in $O(1)$; smooth models only — auto-falls back to bootstrap near the piecewise kink (non-differentiable $\max$)
 - [ ] **v0.5.0** — segmented regression (`SegmentedWLS`): continuous piecewise linear with estimated breakpoint $\psi$, AIC/BIC vs flat-noise piecewise
 - [ ] **pip release** — after real-data bug-finding marathon; semantic versioning locked, public API stable for Phase 2
 
