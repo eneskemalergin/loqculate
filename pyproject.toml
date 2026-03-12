@@ -1,0 +1,72 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "loqculate"
+version = "0.2.0"
+description = "Limit of Detection and Quantitation calculator for mass-spectrometry calibration curves"
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "Enes Kemal Ergin" }]
+keywords = ["proteomics", "mass-spectrometry", "LOQ", "LOD", "calibration", "quantitation"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+]
+requires-python = ">=3.10"
+dependencies = [
+    "numpy>=1.24",
+    "scipy>=1.10",
+    "pandas>=2.0",
+    "matplotlib>=3.7",
+    "tqdm>=4.64",
+    "lmfit>=1.2",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4",
+    "pytest-cov>=4.1",
+    "ruff>=0.3",
+]
+
+[project.scripts]
+loqculate = "loqculate.cli:main"
+
+[project.urls]
+Repository = "https://github.com/MatrixMatched-Project/loqculate"
+"Bug Tracker" = "https://github.com/MatrixMatched-Project/loqculate/issues"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["loqculate*"]
+
+[tool.setuptools.package-data]
+loqculate = ["py.typed"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+ignore = ["E501"]
+
+[tool.coverage.run]
+source = ["loqculate"]
+omit = ["loqculate/testing/*", "tests/*"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false

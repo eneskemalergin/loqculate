@@ -4,13 +4,14 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional, Union
 
-import numpy as np
 import matplotlib
+import numpy as np
+
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
-from loqculate.models.cv_empirical import EmpiricalCV
 from loqculate.config import DEFAULT_CV_THRESH
+from loqculate.models.cv_empirical import EmpiricalCV
 
 plt.style.use('seaborn-v0_8-whitegrid')
 

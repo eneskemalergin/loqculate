@@ -1,10 +1,9 @@
 """Named edge-case presets for :class:`~loqculate.testing.simulator.CurveSimulator`."""
 from __future__ import annotations
 
-from loqculate.testing.simulator import CurveSimulator, SimulatedDataset
-
 import numpy as np
 
+from loqculate.testing.simulator import CurveSimulator, SimulatedDataset
 
 _DEFAULT_CONCS = [0.0, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 50.0, 100.0, 200.0, 500.0, 1000.0, 2000.0]
 _SPARSE_CONCS = [0.0, 1.0, 10.0, 100.0]  # only 4 levels

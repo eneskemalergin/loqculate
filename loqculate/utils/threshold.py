@@ -1,4 +1,5 @@
 import numpy as np
+
 from loqculate.config import DEFAULT_CV_THRESH, DEFAULT_SLIDING_WINDOW
 
 

@@ -1,14 +1,13 @@
 from __future__ import annotations
 
 import warnings
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Optional, Tuple
 
 import numpy as np
 
 from loqculate.config import DEFAULT_CV_THRESH, DEFAULT_SLIDING_WINDOW
 from loqculate.models.base import CalibrationModel
 from loqculate.utils.threshold import find_loq_threshold
-
 
 # ------------------------------------------------------------------
 # Vectorized helpers (module-level, no object overhead)

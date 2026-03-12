@@ -1,4 +1,5 @@
 import numpy as np
+
 from loqculate.config import DEFAULT_WEIGHT_CAP
 
 

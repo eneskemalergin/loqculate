@@ -13,12 +13,11 @@ loqculate compare data.tsv conc_map.csv --models piecewise_wls,cv_empirical
 """
 from __future__ import annotations
 
+import argparse
 import os
 import sys
-import argparse
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
-from typing import Optional
 
 import numpy as np
 from tqdm import tqdm
@@ -33,9 +32,8 @@ from loqculate.config import (
     DEFAULT_SLIDING_WINDOW,
     DEFAULT_STD_MULT,
 )
-from loqculate.io import read_calibration_data, apply_multiplier, stream_csv_writer
+from loqculate.io import apply_multiplier, read_calibration_data, stream_csv_writer
 from loqculate.models import MODEL_REGISTRY
-
 
 # ---------------------------------------------------------------------------
 # Worker functions (module-level so ProcessPoolExecutor can pickle them)
@@ -146,8 +144,8 @@ def _run_fit(args: argparse.Namespace) -> None:
 
 def _plot_one(row, x_s, y_s, peps_s, args):
     """Fit and plot a single peptide (called from the main process)."""
-    from loqculate.plotting import plot_calibration, plot_cv_profile
     from loqculate.models import MODEL_REGISTRY
+    from loqculate.plotting import plot_calibration, plot_cv_profile
 
     pep = row['peptide']
     mask = peps_s == pep
@@ -170,8 +168,8 @@ def _plot_one(row, x_s, y_s, peps_s, args):
 # ---------------------------------------------------------------------------
 
 def _run_compare(args: argparse.Namespace) -> None:
-    from loqculate.plotting import plot_model_comparison
     from loqculate.models import MODEL_REGISTRY
+    from loqculate.plotting import plot_model_comparison
 
     data = read_calibration_data(args.curve_data, args.filename_concentration_map,
                                 fmt=args.format)
@@ -193,8 +191,6 @@ def _run_compare(args: argparse.Namespace) -> None:
 
     uniq_peps, group_starts = np.unique(peps_s, return_index=True)
     group_ends = np.append(group_starts[1:], len(peps_s))
-
-    all_rows: list[list[dict]] = [[] for _ in model_names]
 
     for pep_idx, pep in enumerate(tqdm(uniq_peps, desc='comparing models')):
         s, e = int(group_starts[pep_idx]), int(group_ends[pep_idx])

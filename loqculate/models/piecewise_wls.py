@@ -18,7 +18,6 @@ from loqculate.utils.bootstrap import bootstrap_predictions
 from loqculate.utils.threshold import find_loq_threshold
 from loqculate.utils.weights import inverse_sqrt_weights
 
-
 # ---------------------------------------------------------------------------
 # Piecewise function
 # ---------------------------------------------------------------------------

@@ -4,13 +4,14 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional, Union
 
-import numpy as np
 import matplotlib
+import numpy as np
+
 matplotlib.use('Agg')  # non-interactive backend; callers can override before import
 import matplotlib.pyplot as plt
 
-from loqculate.models.base import CalibrationModel
 from loqculate.config import DEFAULT_CV_THRESH, DEFAULT_STD_MULT
+from loqculate.models.base import CalibrationModel
 
 plt.style.use('seaborn-v0_8-whitegrid')
 
