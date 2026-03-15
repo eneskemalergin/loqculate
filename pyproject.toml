@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "loqculate"
-version = "0.2.0"
+version = "0.2.2"
 description = "Limit of Detection and Quantitation calculator for mass-spectrometry calibration curves"
 readme = "README.md"
 license = { text = "MIT" }

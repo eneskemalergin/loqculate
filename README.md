@@ -26,7 +26,7 @@
 - **11.4× lower memory** per peptide vs the original scripts (VmRSS, 1 000 peptide batch); throughput advantage scales with dataset size — batch is 3.3× faster at 10 000 peptides due to reduced GC pressure (see [`comparison_report.ipynb`](comparison_report.ipynb))
 - **TRF solver** (`scipy.optimize.least_squares`, method='trf') with guaranteed convergence bounds, replacing unconstrained curve_fit calls
 - A second model — **EmpiricalCV** — as a model-free alternative to PiecewiseWLS, very fast but higher FDR at low replicate counts (n < 5)
-- **`loqculate.compat`** — drop-in `OriginalWLS` / `OriginalCV` wrappers reproducing paper results without the legacy scripts (immediate next plan v0.2.2, currently live in `old/`)
+- **`loqculate.compat`** — drop-in `OriginalWLS` / `OriginalCV` wrappers reproducing paper results without the legacy scripts; registered in `MODEL_REGISTRY` and usable via the CLI (`--model original_wls`)
 - **Bootstrap guard** preventing infinite loops on zero-signal replicates
 - Support for **6 MS input formats**: DIA-NN report, DIA-NN pr_matrix, Spectronaut, Skyline, EncyclopeDIA, and generic CSV
 - Parallel processing via `ProcessPoolExecutor` for whole-proteome throughput
@@ -58,7 +58,13 @@ loqculate fit data.tsv conc_map.csv
 # Fit with EmpiricalCV model
 loqculate fit data.tsv conc_map.csv --model cv_empirical
 
-# Compare both models side-by-side
+# Fit with original Pino 2020 WLS (for paper reproducibility)
+loqculate fit data.tsv conc_map.csv --model original_wls
+
+# Fit with original Pino 2020 CV method
+loqculate fit data.tsv conc_map.csv --model original_cv
+
+# Compare both modern models side-by-side
 loqculate compare data.tsv conc_map.csv --models piecewise_wls,cv_empirical
 ```
 
@@ -75,12 +81,22 @@ sample_5ng_rep1.raw,5.0
 
 ```python
 from loqculate import read_calibration_data, PiecewiseWLS, EmpiricalCV
+from loqculate.compat import OriginalWLS, OriginalCV
 
 data = read_calibration_data("data.tsv", "conc_map.csv")
 
 for peptide, x, y in data.iter_peptides():
     result = PiecewiseWLS().fit(x, y)
-    print(peptide, result.loq, result.lod)
+    print(peptide, result.loq(), result.lod())
+
+# Reproduce original Pino 2020 results exactly
+for peptide, x, y in data.iter_peptides():
+    m = OriginalWLS().fit(x, y)
+    print(peptide, m.lod(), m.loq())
+
+# Or via MODEL_REGISTRY
+from loqculate import MODEL_REGISTRY
+ModelClass = MODEL_REGISTRY['original_wls']
 ```
 
 ---
@@ -123,17 +139,27 @@ $$\mathrm{LOQ} = \min\{ C_i : \mathrm{CV}(C_i) < \tau,\ \mathrm{CV}(C_{i+1}) < \
 
 $\tau$ is `cv_thresh` (default 0.20). Requiring three consecutive passing concentrations reduces single-point false discoveries from ~100% to <5%.
 
+### OriginalWLS (`loqculate.compat`)
+
+Verbatim port of `old/calculate-loq.py` `process_peptide(model='piecewise')` from Pino 2020. Reproduces the exact original logic: legacy parameter initialisation (slope from top-two concentration points), scipy TRF solver with the same bounds as the original lmfit call, original LOD formula (flat noise floor + $n \cdot \sigma$), and **single-point bootstrap LOQ rule** (no sliding window). Bootstrap seeds are `SeedSequence(i)` for `i in range(n_boot)` — identical to the original script.
+
+Use when you need byte-for-byte reproducibility of published results. For new analyses, prefer `PiecewiseWLS` (3.3× faster in batch, identical math, sliding-window LOQ).
+
+### OriginalCV (`loqculate.compat`)
+
+Verbatim port of `old/loq_by_cv.py` `calculate_LOQ_byCV()`. LOQ is the lowest positive concentration where CV ≤ `cv_thresh` (non-strict `≤`, matching the original `<= 0.2` check). No LOD, no sliding window, no parametric model. Deterministic and near-instant — same speed as EmpiricalCV but with higher FDR due to the single-point rule (64–99% on null curves).
+
 ---
 
 ## Configuration & defaults
 
-| Parameter   | Default         | Description                                                        |
-| ----------- | --------------- | ------------------------------------------------------------------ |
-| `cv_thresh` | `0.20`          | CV threshold; LOQ requires CV < this value                         |
-| `window`    | `3`             | Consecutive passing concentration points required                  |
-| `n_boot`    | `100`           | Bootstrap resamples for LOD/LOQ CI estimation                      |
-| `std_mult`  | `2`             | Noise-floor multiplier for LOD ($\mathrm{LOD} = \alpha + 2\sigma$) |
-| `model`     | `piecewise_wls` | Active model; also accepts `cv_empirical`                          |
+| Parameter   | Default         | Description                                                              |
+| ----------- | --------------- | ------------------------------------------------------------------------ |
+| `cv_thresh` | `0.20`          | CV threshold; LOQ requires CV < this value                               |
+| `window`    | `3`             | Consecutive passing concentration points required                        |
+| `n_boot`    | `100`           | Bootstrap resamples for LOD/LOQ CI estimation                            |
+| `std_mult`  | `2`             | Noise-floor multiplier for LOD ($\mathrm{LOD} = \alpha + 2\sigma$)       |
+| `model`     | `piecewise_wls` | Active model; also accepts `cv_empirical`, `original_wls`, `original_cv` |
 
 Pass these as CLI flags (`--cv_thresh 0.15`) or keyword arguments to `.fit()`.
 
@@ -168,7 +194,7 @@ See [`comparison_report.ipynb`](comparison_report.ipynb) for a full frozen, 12-s
 
 ```bash
 pip install -e ".[dev]"
-pytest                 # 64 tests
+pytest                 # 101 tests
 ruff check loqculate/  # lint
 ```
 
@@ -190,7 +216,7 @@ A guiding constraint: **loqculate is a practical proteomics tool, not a statisti
 
 Same piecewise/CV framework, no new model classes. Ends with a pip release after a bug-finding period on real datasets.
 
-- [ ] **v0.2.x** — `loqculate.compat`: `OriginalWLS` / `OriginalCV` API wrappers; paper results reproducible without legacy scripts
+- [x] **v0.2.2** ✓ — `loqculate.compat`: `OriginalWLS` / `OriginalCV` API wrappers; paper results reproducible without legacy scripts
 - [ ] **v0.3.0** — closed-form piecewise solver (`PiecewiseCF`): linear-algebra knot search, no optimizer, ~5–20× faster, identical results; formalizes $w_i$ (per-point) vs $W_i$ (per-concentration) weight convention as a hard invariant across all WLS models
 - [ ] **v0.4.0** — delta-method uncertainty (`--fast` flag, double-dash): analytical LOQ CIs in $O(1)$; smooth models only — auto-falls back to bootstrap near the piecewise kink (non-differentiable $\max$)
 - [ ] **v0.5.0** — segmented regression (`SegmentedWLS`): continuous piecewise linear with estimated breakpoint $\psi$, AIC/BIC vs flat-noise piecewise
@@ -230,7 +256,7 @@ If you use `loqculate` in your work, please cite both the original method paper 
   title     = {loqculate: Limit of Detection and Quantitation calculator
                for mass-spectrometry calibration curves},
   year      = {2026},
-  version   = {0.2.0},
+  version   = {0.2.2},
   url       = {https://github.com/eneskemalergin/loqculate},
   license   = {MIT},
 }
