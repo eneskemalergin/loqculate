@@ -194,6 +194,7 @@ See [`comparison_report.ipynb`](comparison_report.ipynb) for a full frozen, 12-s
 
 ```bash
 pip install -e ".[dev]"
+pre-commit install      # install git hooks (runs ruff on every commit)
 pytest                 # 101 tests
 ruff check loqculate/  # lint
 ```

@@ -8,6 +8,7 @@ Reproduces the exact numerical logic of the Pino 2020 WLS implementation:
   - Bootstrap seeding: per-replicate SeedSequence(i) for i in range(n_boot),
     identical to _bootstrap_once() in the original script
 """
+
 from __future__ import annotations
 
 from typing import Optional, Tuple
@@ -27,14 +28,12 @@ from loqculate.config import (
 )
 from loqculate.models.base import CalibrationModel
 
-
 # ---------------------------------------------------------------------------
 # Module-level helpers (verbatim ports from calculate-loq.py)
 # ---------------------------------------------------------------------------
 
-def _initialize_params_legacy(
-    x: np.ndarray, y: np.ndarray
-) -> Tuple[float, float, float]:
+
+def _initialize_params_legacy(x: np.ndarray, y: np.ndarray) -> Tuple[float, float, float]:
     """2019 Pino init: slope from top-two points, noise from bottom point.
 
     Verbatim port of ``initialize_params_legacy()`` in calculate-loq.py.
@@ -68,9 +67,7 @@ def _orig_weights(x: np.ndarray) -> np.ndarray:
     )
 
 
-def _residuals(
-    params: np.ndarray, x: np.ndarray, y: np.ndarray, weights: np.ndarray
-) -> np.ndarray:
+def _residuals(params: np.ndarray, x: np.ndarray, y: np.ndarray, weights: np.ndarray) -> np.ndarray:
     """Weighted residuals for the piecewise model.
 
     params = [a, b, c_minus_b]  where  c = b + c_minus_b.
@@ -82,9 +79,7 @@ def _residuals(
     return (model_vals - y) * weights
 
 
-def _fit_piecewise_legacy(
-    x: np.ndarray, y: np.ndarray
-) -> Tuple[float, float, float]:
+def _fit_piecewise_legacy(x: np.ndarray, y: np.ndarray) -> Tuple[float, float, float]:
     """Fit the piecewise model using the legacy initialisation.
 
     Returns (slope a, linear_intercept b, noise_intercept c).
@@ -100,7 +95,7 @@ def _fit_piecewise_legacy(
         x0=[a0, b0, cmb0],
         args=(x, y, weights),
         bounds=([0.0, -np.inf, 0.0], [np.inf, np.inf, np.inf]),
-        method='trf',
+        method="trf",
         max_nfev=5000,
     )
     a, b, cmb = result.x
@@ -176,17 +171,17 @@ def _bootstrap_once_legacy(
     rng = np.random.default_rng(np.random.SeedSequence(seed))
 
     # Sort by concentration to reproduce the original script's row ordering.
-    sort_idx = np.argsort(x, kind='stable')
-    df = pd.DataFrame({'curvepoint': x[sort_idx], 'area': y[sort_idx]})
+    sort_idx = np.argsort(x, kind="stable")
+    df = pd.DataFrame({"curvepoint": x[sort_idx], "area": y[sort_idx]})
 
     # Resample until we have more than one unique area value (matches original guard)
     while True:
         resampled = df.sample(n=len(df), replace=True, random_state=rng)
-        if resampled['area'].nunique() > 1:
+        if resampled["area"].nunique() > 1:
             break
 
-    bx = resampled['curvepoint'].to_numpy(dtype=float)
-    by = resampled['area'].to_numpy(dtype=float)
+    bx = resampled["curvepoint"].to_numpy(dtype=float)
+    by = resampled["area"].to_numpy(dtype=float)
 
     a, b, c = _fit_piecewise_legacy(bx, by)
     return np.maximum(x_grid * a + b, c)
@@ -208,16 +203,16 @@ def _bootstrap_many_legacy(
 
     mean = mat.mean(axis=0)
     std = mat.std(axis=0, ddof=1)
-    with np.errstate(invalid='ignore', divide='ignore'):
+    with np.errstate(invalid="ignore", divide="ignore"):
         cv = np.where(mean != 0, std / mean, np.nan)
 
     return {
-        'boot_x': x_grid,
-        'mean': mean,
-        'std': std,
-        'cv': cv,
-        'pct_5': np.percentile(mat, 5, axis=0),
-        'pct_95': np.percentile(mat, 95, axis=0),
+        "boot_x": x_grid,
+        "mean": mean,
+        "std": std,
+        "cv": cv,
+        "pct_5": np.percentile(mat, 5, axis=0),
+        "pct_95": np.percentile(mat, 95, axis=0),
     }
 
 
@@ -231,8 +226,8 @@ def _calculate_loq_legacy(
     LOQ = min(boot_x[boot_x > LOD and boot_cv < cv_thresh]).
     No sliding window — this is the original single-point rule.
     """
-    boot_x = boot['boot_x']
-    boot_cv = boot['cv']
+    boot_x = boot["boot_x"]
+    boot_cv = boot["cv"]
 
     above_lod = boot_x > lod
     good_cv = boot_cv < cv_thresh
@@ -252,6 +247,7 @@ def _calculate_loq_legacy(
 # ---------------------------------------------------------------------------
 # OriginalWLS model class
 # ---------------------------------------------------------------------------
+
 
 class OriginalWLS(CalibrationModel):
     """Verbatim port of calculate-loq.py ``process_peptide(model='piecewise')``.
@@ -314,16 +310,14 @@ class OriginalWLS(CalibrationModel):
         x: np.ndarray,
         y: np.ndarray,
         weights: Optional[np.ndarray] = None,
-    ) -> 'OriginalWLS':
+    ) -> "OriginalWLS":
         x = np.asarray(x, dtype=float)
         y = np.asarray(y, dtype=float)
 
         if len(x) < 3:
-            raise ValueError(
-                f'OriginalWLS.fit() requires at least 3 data points, got {len(x)}.'
-            )
+            raise ValueError(f"OriginalWLS.fit() requires at least 3 data points, got {len(x)}.")
         if len(set(x)) < 2:
-            raise ValueError('OriginalWLS.fit() requires at least 2 unique concentrations.')
+            raise ValueError("OriginalWLS.fit() requires at least 2 unique concentrations.")
 
         self.x_ = x
         self.y_ = y
@@ -332,28 +326,28 @@ class OriginalWLS(CalibrationModel):
         # Fit the piecewise model with legacy initialisation
         a, b, c = _fit_piecewise_legacy(x, y)
         self.params_ = {
-            'slope': a,
-            'intercept_linear': b,
-            'intercept_noise': c,
+            "slope": a,
+            "intercept_linear": b,
+            "intercept_noise": c,
         }
 
         # LOD (deterministic)
         self._lod_val, self._std_noise = _calculate_lod_legacy(
-            a, b, c, x, y,
-            self.std_mult, self.min_noise_points, self.min_linear_points,
+            a,
+            b,
+            c,
+            x,
+            y,
+            self.std_mult,
+            self.min_noise_points,
+            self.min_linear_points,
         )
 
         # Bootstrap + LOQ (only if LOD is finite)
         if np.isfinite(self._lod_val):
-            self._x_grid = np.linspace(
-                self._lod_val, float(np.max(x)), num=self.grid_points
-            )
-            self._boot_summary = _bootstrap_many_legacy(
-                x, y, self._x_grid, self.n_boot
-            )
-            self._loq_val = _calculate_loq_legacy(
-                self._boot_summary, self._lod_val, self.cv_thresh
-            )
+            self._x_grid = np.linspace(self._lod_val, float(np.max(x)), num=self.grid_points)
+            self._boot_summary = _bootstrap_many_legacy(x, y, self._x_grid, self.n_boot)
+            self._loq_val = _calculate_loq_legacy(self._boot_summary, self._lod_val, self.cv_thresh)
         else:
             self._loq_val = np.inf
             self._boot_summary = None
@@ -369,9 +363,9 @@ class OriginalWLS(CalibrationModel):
     def predict(self, x_new: np.ndarray) -> np.ndarray:
         self._check_is_fitted()
         x_new = np.asarray(x_new, dtype=float)
-        a = self.params_['slope']
-        b = self.params_['intercept_linear']
-        c = self.params_['intercept_noise']
+        a = self.params_["slope"]
+        b = self.params_["intercept_linear"]
+        c = self.params_["intercept_noise"]
         return np.maximum(c, a * x_new + b)
 
     # ------------------------------------------------------------------
@@ -398,12 +392,12 @@ class OriginalWLS(CalibrationModel):
     def summary(self) -> dict:
         self._check_is_fitted()
         return {
-            'slope': self.params_['slope'],
-            'intercept_linear': self.params_['intercept_linear'],
-            'intercept_noise': self.params_['intercept_noise'],
-            'std_noise': self._std_noise,
-            'lod': self._lod_val,
-            'loq': self._loq_val,
-            'n_points': len(self.x_),
-            'compat_model': 'OriginalWLS',
+            "slope": self.params_["slope"],
+            "intercept_linear": self.params_["intercept_linear"],
+            "intercept_noise": self.params_["intercept_noise"],
+            "std_noise": self._std_noise,
+            "lod": self._lod_val,
+            "loq": self._loq_val,
+            "n_points": len(self.x_),
+            "compat_model": "OriginalWLS",
         }

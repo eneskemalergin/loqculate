@@ -1,8 +1,10 @@
 """Shared CV computation utilities used by EmpiricalCV and OriginalCV."""
+
 from __future__ import annotations
 
-import numpy as np
 from typing import Tuple
+
+import numpy as np
 
 
 def vectorized_cv_stats(
@@ -38,12 +40,12 @@ def vectorized_cv_stats(
 
     # Bessel-corrected variance: (Σxi²/n - mean²) * n/(n-1)
     sum_sq = np.bincount(inverse, weights=y * y, minlength=n_groups)
-    with np.errstate(invalid='ignore', divide='ignore'):
-        var = (sum_sq / counts - means ** 2) * counts / (counts - 1.0)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        var = (sum_sq / counts - means**2) * counts / (counts - 1.0)
     var = np.maximum(var, 0.0)
     stds = np.sqrt(var)
 
-    with np.errstate(invalid='ignore', divide='ignore'):
+    with np.errstate(invalid="ignore", divide="ignore"):
         cvs = np.where(means != 0, stds / means, np.nan)
 
     cvs[counts < 2] = np.nan

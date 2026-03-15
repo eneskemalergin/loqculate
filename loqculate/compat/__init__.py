@@ -12,7 +12,8 @@ The intent is reproducibility: users who published results with the legacy
 scripts can verify agreement with loqculate's engine, and new users can
 compare both approaches side-by-side.
 """
-from loqculate.compat.wls import OriginalWLS
-from loqculate.compat.cv import OriginalCV
 
-__all__ = ['OriginalWLS', 'OriginalCV']
+from loqculate.compat.cv import OriginalCV
+from loqculate.compat.wls import OriginalWLS
+
+__all__ = ["OriginalWLS", "OriginalCV"]

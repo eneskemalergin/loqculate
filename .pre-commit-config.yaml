@@ -1,0 +1,9 @@
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.9.10
+    hooks:
+      # Fix import sorting and other auto-fixable lint issues
+      - id: ruff
+        args: [--fix, --exit-non-zero-on-fix]
+      # Format code (line length, trailing commas, etc.)
+      - id: ruff-format
