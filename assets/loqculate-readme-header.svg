@@ -1,0 +1,226 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   viewBox="0 0 510 205"
+   role="img"
+   aria-labelledby="title desc"
+   version="1.1"
+   id="svg15"
+   sodipodi:docname="loqculate-readme-header.svg"
+   width="510"
+   height="205"
+   inkscape:version="1.4.3 (0d15f75042, 2025-12-25)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg"
+   xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+   xmlns:cc="http://creativecommons.org/ns#"
+   xmlns:dc="http://purl.org/dc/elements/1.1/">
+  <sodipodi:namedview
+     id="namedview15"
+     pagecolor="#ffffff"
+     bordercolor="#000000"
+     borderopacity="0.25"
+     inkscape:showpageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:zoom="2.88125"
+     inkscape:cx="159.30586"
+     inkscape:cy="96.138829"
+     inkscape:window-width="3840"
+     inkscape:window-height="2089"
+     inkscape:window-x="2160"
+     inkscape:window-y="34"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="svg15" />
+  <title
+     id="title">loqculate README header</title>
+  <desc
+     id="desc">Compact stacked header artwork for the loqculate README with minimal whitespace.</desc>
+  <defs
+     id="defs4">
+    <linearGradient
+       id="tileFill"
+       x1="0"
+       y1="0"
+       x2="128"
+       y2="128"
+       gradientUnits="userSpaceOnUse">
+      <stop
+         offset="0%"
+         stop-color="#F3F6F2"
+         id="stop1" />
+      <stop
+         offset="100%"
+         stop-color="#E4ECE5"
+         id="stop2" />
+    </linearGradient>
+    <linearGradient
+       id="riseStroke"
+       x1="20.633926"
+       y1="108.13502"
+       x2="88.604507"
+       y2="40.164436"
+       gradientTransform="scale(1.2358288,0.80917359)"
+       gradientUnits="userSpaceOnUse">
+      <stop
+         offset="0%"
+         stop-color="#4C7F67"
+         id="stop3" />
+      <stop
+         offset="100%"
+         stop-color="#6FA585"
+         id="stop4" />
+    </linearGradient>
+  </defs>
+  <g
+     transform="translate(191,2)"
+     id="g14">
+    <rect
+       x="0"
+       y="0"
+       width="128"
+       height="128"
+       rx="19"
+       fill="url(#tileFill)"
+       id="rect4"
+       style="fill:url(#tileFill)" />
+    <rect
+       x="1.5"
+       y="1.5"
+       width="125"
+       height="125"
+       rx="17.5"
+       fill="none"
+       stroke="#274038"
+       stroke-width="3"
+       opacity="0.92"
+       id="rect5" />
+    <line
+       x1="20"
+       y1="104"
+       x2="110"
+       y2="104"
+       stroke="#6e837a"
+       stroke-width="4"
+       stroke-linecap="round"
+       opacity="0.95"
+       id="line5" />
+    <line
+       x1="20"
+       y1="104"
+       x2="20"
+       y2="22"
+       stroke="#6e837a"
+       stroke-width="4"
+       stroke-linecap="round"
+       opacity="0.95"
+       id="line6" />
+    <line
+       x1="20"
+       y1="74"
+       x2="110"
+       y2="74"
+       stroke="#8b3e21"
+       stroke-width="4.8"
+       stroke-linecap="round"
+       stroke-dasharray="8, 6"
+       id="line7" />
+    <line
+       x1="73"
+       y1="104"
+       x2="73"
+       y2="22"
+       stroke="#8b3e21"
+       stroke-width="4.8"
+       stroke-linecap="round"
+       stroke-dasharray="8, 6"
+       id="line8" />
+    <path
+       d="m 28,85 h 24 c 6,0 10,-1 14,-5 4,-4 9,-9 14,-15 l 27,-30"
+       fill="none"
+       stroke="#20352e"
+       stroke-width="8.2"
+       stroke-linecap="round"
+       stroke-linejoin="round"
+       opacity="0.92"
+       id="path8" />
+    <path
+       d="m 28,85 h 24 c 6,0 10,-1 14,-5 4,-4 9,-9 14,-15 l 27,-30"
+       fill="none"
+       stroke="url(#riseStroke)"
+       stroke-width="5"
+       stroke-linecap="round"
+       stroke-linejoin="round"
+       id="path9"
+       style="stroke:url(#riseStroke)" />
+    <circle
+       cx="36"
+       cy="85"
+       r="3.2"
+       fill="#5f746b"
+       id="circle9" />
+    <circle
+       cx="51"
+       cy="85"
+       r="3.2"
+       fill="#5f746b"
+       id="circle10" />
+    <circle
+       cx="66"
+       cy="82"
+       r="4.9000001"
+       fill="#f3f6f2"
+       stroke="#8b3e21"
+       stroke-width="2.8"
+       id="circle11" />
+    <circle
+       cx="80"
+       cy="65"
+       r="4.9000001"
+       fill="#f3f6f2"
+       stroke="#274038"
+       stroke-width="2.8"
+       id="circle12" />
+    <circle
+       cx="93"
+       cy="50"
+       r="4.9000001"
+       fill="#f3f6f2"
+       stroke="#274038"
+       stroke-width="2.8"
+       id="circle13" />
+    <circle
+       cx="106"
+       cy="35"
+       r="4.9000001"
+       fill="#f3f6f2"
+       stroke="#274038"
+       stroke-width="2.8"
+       id="circle14" />
+  </g>
+  <g
+     transform="translate(253.68115,188)"
+     id="g15">
+    <text
+       x="0"
+       y="0"
+       text-anchor="middle"
+       fill="#233830"
+       font-family="'Space Grotesk', 'Avenir Next', 'Segoe UI', sans-serif"
+       font-size="74px"
+       font-weight="700"
+       letter-spacing="0.2"
+       id="text14">loqculate</text>
+  </g>
+  <metadata
+     id="metadata15">
+    <rdf:RDF>
+      <cc:Work
+         rdf:about="">
+        <dc:title>loqculate README header</dc:title>
+      </cc:Work>
+    </rdf:RDF>
+  </metadata>
+</svg>

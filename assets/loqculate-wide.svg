@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 220" role="img" aria-labelledby="title desc">
+  <title id="title">loqculate threshold curve wide</title>
+  <desc id="desc">Wide horizontal logo layout for loqculate with generous whitespace and the threshold-curve icon.</desc>
+  <defs>
+    <linearGradient id="tileFill" x1="0" y1="0" x2="148" y2="148" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#F3F6F2" />
+      <stop offset="100%" stop-color="#E4ECE5" />
+    </linearGradient>
+    <linearGradient id="riseStroke" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0%" stop-color="#4C7F67" />
+      <stop offset="100%" stop-color="#6FA585" />
+    </linearGradient>
+  </defs>
+
+  <g transform="translate(40 36)">
+    <rect x="0" y="0" width="148" height="148" rx="22" fill="url(#tileFill)" />
+    <rect x="1.5" y="1.5" width="145" height="145" rx="20.5" fill="none" stroke="#274038" stroke-width="3" opacity="0.92" />
+
+    <line x1="22" y1="122" x2="126" y2="122" stroke="#6E837A" stroke-width="4" stroke-linecap="round" opacity="0.95" />
+    <line x1="22" y1="122" x2="22" y2="24" stroke="#6E837A" stroke-width="4" stroke-linecap="round" opacity="0.95" />
+    <line x1="22" y1="87" x2="126" y2="87" stroke="#8B3E21" stroke-width="4.8" stroke-linecap="round" stroke-dasharray="8 6" />
+    <line x1="83" y1="122" x2="83" y2="24" stroke="#8B3E21" stroke-width="4.8" stroke-linecap="round" stroke-dasharray="8 6" />
+
+    <path d="M32 99 H61 C68 99 72 97 76 93 C80 89 85 84 91 77 L122 42" fill="none" stroke="#20352E" stroke-width="8.8" stroke-linecap="round" stroke-linejoin="round" opacity="0.92" />
+    <path d="M32 99 H61 C68 99 72 97 76 93 C80 89 85 84 91 77 L122 42" fill="none" stroke="url(#riseStroke)" stroke-width="5.4" stroke-linecap="round" stroke-linejoin="round" />
+
+    <circle cx="41" cy="99" r="3.5" fill="#5F746B" />
+    <circle cx="59" cy="99" r="3.5" fill="#5F746B" />
+    <circle cx="77" cy="96" r="5.3" fill="#F3F6F2" stroke="#8B3E21" stroke-width="3" />
+    <circle cx="93" cy="78" r="5.3" fill="#F3F6F2" stroke="#274038" stroke-width="3" />
+    <circle cx="108" cy="60" r="5.3" fill="#F3F6F2" stroke="#274038" stroke-width="3" />
+    <circle cx="123" cy="42" r="5.3" fill="#F3F6F2" stroke="#274038" stroke-width="3" />
+  </g>
+
+  <g transform="translate(240 72)">
+    <text x="0" y="64" fill="#EEF4EF" stroke="#233830" stroke-width="7" paint-order="stroke fill" font-family="'Space Grotesk', 'Avenir Next', 'Segoe UI', sans-serif" font-size="92" font-weight="700" letter-spacing="0.4">loqculate</text>
+  </g>
+</svg>

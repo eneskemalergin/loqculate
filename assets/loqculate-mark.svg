@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
+  <title id="title">loqculate threshold curve mark</title>
+  <desc id="desc">Standalone square icon mark for loqculate based on the threshold-curve visual language.</desc>
+  <defs>
+    <linearGradient id="tileFill" x1="0" y1="0" x2="200" y2="200" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#F3F6F2" />
+      <stop offset="100%" stop-color="#E4ECE5" />
+    </linearGradient>
+    <linearGradient id="riseStroke" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0%" stop-color="#4C7F67" />
+      <stop offset="100%" stop-color="#6FA585" />
+    </linearGradient>
+  </defs>
+
+  <rect x="20" y="20" width="184" height="184" rx="28" fill="url(#tileFill)" />
+  <rect x="21.5" y="21.5" width="181" height="181" rx="26.5" fill="none" stroke="#274038" stroke-width="3" opacity="0.92" />
+
+  <line x1="48" y1="170" x2="176" y2="170" stroke="#6E837A" stroke-width="4.5" stroke-linecap="round" opacity="0.95" />
+  <line x1="48" y1="170" x2="48" y2="52" stroke="#6E837A" stroke-width="4.5" stroke-linecap="round" opacity="0.95" />
+  <line x1="48" y1="128" x2="176" y2="128" stroke="#8B3E21" stroke-width="5.5" stroke-linecap="round" stroke-dasharray="10 7" />
+  <line x1="124" y1="170" x2="124" y2="52" stroke="#8B3E21" stroke-width="5.5" stroke-linecap="round" stroke-dasharray="10 7" />
+
+  <path d="M60 142 H96 C104 142 109 140 114 136 C119 132 126 125 132 117 L171 73" fill="none" stroke="#20352E" stroke-width="11" stroke-linecap="round" stroke-linejoin="round" opacity="0.92" />
+  <path d="M60 142 H96 C104 142 109 140 114 136 C119 132 126 125 132 117 L171 73" fill="none" stroke="url(#riseStroke)" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round" />
+
+  <circle cx="72" cy="142" r="4.2" fill="#5F746B" />
+  <circle cx="94" cy="142" r="4.2" fill="#5F746B" />
+  <circle cx="116" cy="138" r="6.2" fill="#F3F6F2" stroke="#8B3E21" stroke-width="3.4" />
+  <circle cx="136" cy="116" r="6.2" fill="#F3F6F2" stroke="#274038" stroke-width="3.4" />
+  <circle cx="156" cy="94" r="6.2" fill="#F3F6F2" stroke="#274038" stroke-width="3.4" />
+  <circle cx="174" cy="72" r="6.2" fill="#F3F6F2" stroke="#274038" stroke-width="3.4" />
+</svg>
