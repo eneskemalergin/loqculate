@@ -18,6 +18,38 @@ from loqculate.utils.normal_equations import (
 )
 
 # ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
+
+
+def _fit_and_constrain(
+    x: np.ndarray,
+    y: np.ndarray,
+    W: np.ndarray,
+    k: float,
+) -> tuple[float, float, float, float]:
+    """Fit both segments at partition boundary k and apply constraint rules.
+
+    Returns (slope, intercept, noise_intercept, total_rss).
+    """
+    noise_mask = x <= k
+    lin_mask = ~noise_mask
+
+    c, rss_noise = weighted_mean(y[noise_mask], W[noise_mask])
+    slope, intercept, rss_lin = solve_2x2_wls(x[lin_mask], y[lin_mask], W[lin_mask])
+
+    if slope < 0:
+        intercept, rss_lin = weighted_mean(y[lin_mask], W[lin_mask])
+        slope = 0.0
+
+    if c < intercept:
+        c = intercept
+        rss_noise = float(np.sum(W[noise_mask] * (y[noise_mask] - c) ** 2))
+
+    return slope, intercept, c, rss_noise + rss_lin
+
+
+# ---------------------------------------------------------------------------
 # Result container
 # ---------------------------------------------------------------------------
 
@@ -42,13 +74,23 @@ def find_knot(
     y: np.ndarray,
     W: np.ndarray,
 ) -> KnotResult:
-    """Find the optimal partition knot by discrete search.
+    """Find the optimal partition knot by discrete search with analytical refinement.
 
-    Searches over ``unique(x)[1:-1]`` as candidate partition boundaries.
-    For each candidate ``k``: the noise segment is ``x <= k``, the linear
-    segment is ``x > k``. Applies constraint enforcement after each fit.
+    Phase 1 — discrete search: evaluates ``unique(x)[1:-1]`` as candidate
+    partition boundaries. Applies constraint enforcement after each fit.
     Selects the candidate with the lowest total weighted RSS. Ties go to the
     lowest-x candidate.
+
+    Phase 2 — analytical refinement: using the best candidate parameters
+    ``(a, b, c)``, compute the analytical join point ``x_join = (c - b) / a``
+    and refit both segments with the full observation set partitioned at
+    ``x_join`` instead of at the discrete candidate boundary. This collapses
+    the LOD/LOQ gap that arises when the true join falls between two
+    concentration levels. Same constraint rules apply.
+
+    The refinement is skipped when ``slope == 0`` (horizontal model) or when
+    ``x_join`` falls outside ``(min(x), max(x))``, i.e. when the discrete
+    result already assigns all observations to one segment.
 
     Parameters
     ----------
@@ -80,34 +122,10 @@ def find_knot(
     best: KnotResult | None = None
 
     for k in candidates:
-        noise_mask = x <= k
-        lin_mask = ~noise_mask
-
-        y_noise = y[noise_mask]
-        W_noise = W[noise_mask]
-        y_lin = y[lin_mask]
-        x_lin = x[lin_mask]
-        W_lin = W[lin_mask]
-
-        # Fit noise segment: weighted mean
-        c, rss_noise = weighted_mean(y_noise, W_noise)
-
-        # Fit linear segment: 2×2 normal equations
-        slope, intercept, rss_lin = solve_2x2_wls(x_lin, y_lin, W_lin)
-
-        # Constraint 1: negative slope → horizontal line at weighted mean
-        if slope < 0:
-            intercept, rss_lin = weighted_mean(y_lin, W_lin)
-            slope = 0.0
-
-        # Constraint 2: noise floor below linear intercept → clamp and recompute
-        if c < intercept:
-            c = intercept
-            rss_noise = float(np.sum(W_noise * (y_noise - c) ** 2))
-
-        total_rss = rss_noise + rss_lin
+        slope, intercept, c, total_rss = _fit_and_constrain(x, y, W, k)
 
         if best is None or total_rss < best.rss:
+            noise_mask = x <= k
             best = KnotResult(
                 slope=slope,
                 intercept=intercept,
@@ -115,7 +133,27 @@ def find_knot(
                 knot_x=float(k),
                 rss=total_rss,
                 n_noise=int(np.sum(noise_mask)),
-                n_linear=int(np.sum(lin_mask)),
+                n_linear=int(np.sum(~noise_mask)),
+            )
+
+    # Phase 2: analytical refinement at x_join = (c - b) / a.
+    # Refit using all observations partitioned at x_join instead of the
+    # discrete candidate boundary. Skipped when slope == 0 or x_join is
+    # outside the data range (no change of partition possible).
+    a, b, c = best.slope, best.intercept, best.noise_intercept  # type: ignore[union-attr]
+    if a > 0:
+        x_join = (c - b) / a
+        if np.min(x) < x_join < np.max(x):
+            slope_r, intercept_r, c_r, rss_r = _fit_and_constrain(x, y, W, x_join)
+            noise_mask_r = x <= x_join
+            best = KnotResult(
+                slope=slope_r,
+                intercept=intercept_r,
+                noise_intercept=c_r,
+                knot_x=x_join,
+                rss=rss_r,
+                n_noise=int(np.sum(noise_mask_r)),
+                n_linear=int(np.sum(~noise_mask_r)),
             )
 
     return best  # type: ignore[return-value]  # candidates always non-empty
@@ -224,5 +262,24 @@ def find_knot_batch(
         best_intercepts[improve] = intercepts[improve]
         best_noise_intercepts[improve] = c_arr[improve]
         best_knot_xs[improve] = float(k)
+
+    # Phase 2: analytical refinement for each replicate.
+    # For reps where slope > 0, compute x_join = (c - b) / a and refit
+    # at that boundary. The refinement is applied in a scalar loop because
+    # each rep may have a different x_join, making a fully-vectorized
+    # implementation complex for marginal gain (one extra solve per rep).
+    for i in range(n_reps):
+        a_i = best_slopes[i]
+        if a_i <= 0:
+            continue
+        x_join_i = (best_noise_intercepts[i] - best_intercepts[i]) / a_i
+        if not (np.min(x) < x_join_i < np.max(x)):
+            continue
+        slope_r, intercept_r, c_r, _ = _fit_and_constrain(x, Y_matrix[i], W, x_join_i)
+        best_slopes[i] = slope_r
+        best_intercepts[i] = intercept_r
+        best_noise_intercepts[i] = c_r
+        best_knot_xs[i] = x_join_i
+        # rss_values not updated — used only for candidate selection, already done
 
     return best_slopes, best_intercepts, best_noise_intercepts, best_knot_xs, best_rss
