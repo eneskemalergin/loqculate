@@ -258,8 +258,11 @@ class PiecewiseCF(CalibrationModel):
              [cov(slope, intercept), var(intercept)     ]]
 
         Derived from the stored Gram matrix inverse scaled by the residual
-        mean squared error of the *linear* segment (``ddof=1`` to match the
-        convention used throughout the package).
+        mean squared error of the *linear* segment.  The MSE denominator is
+        ``n_lin - 2`` (one degree of freedom lost per fitted parameter:
+        slope and intercept).  This is the standard unbiased regression MSE,
+        distinct from ``np.std(ddof=1)`` used in :meth:`lod` which estimates
+        a scalar standard deviation from noise observations.
 
         Returns ``None`` when:
 
@@ -294,7 +297,10 @@ class PiecewiseCF(CalibrationModel):
         residuals = y_lin - (a * x_lin + b)
         # Weighted RSS for the linear segment.
         wrss = float(np.sum(W_lin * residuals**2))
-        mse = wrss / (n_lin - 2)  # ddof = 2 (slope + intercept)
+        # Unbiased MSE: divide by (n_lin - 2) because we estimated 2 parameters
+        # (slope and intercept).  Analogous to dividing by (n-1) for a scalar
+        # std, but here the degrees-of-freedom penalty is the number of parameters.
+        mse = wrss / (n_lin - 2)
 
         return mse * self._gram_inv
 
