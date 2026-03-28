@@ -72,7 +72,7 @@ def _fit_and_constrain(
 
     if slope < 0:
         slope = 0.0
-        intercept = sum_WYL / max(sum_WL, 1e-300)
+        intercept = sum_WYL / sum_WL if sum_WL > 0 else float(np.mean(y[L > 0]))
         rss_lin = float(np.sum(W * L * (y - intercept) ** 2))
 
     if c < intercept:
