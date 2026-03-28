@@ -467,11 +467,13 @@ def _bootstrap_vectorized_cf(
     X2_mat = X_mat**2  # (n_reps, n) — precomputed once
 
     # ── Candidate loop: vectorized over all replicates ─────────────────────
-    # Candidates come from the ORIGINAL unique(x)[1:-1].  Since each resample
-    # draws from the same concentration levels, unique(x[idx]) ⊆ unique(x),
-    # and checking extra candidates does not change the minimum-RSS selection
-    # (a candidate absent in the resample yields the same RSS as the adjacent
-    # present one — this is verified by the H6 bit-exact agreement test).
+    # Candidates are drawn from the ORIGINAL unique(x)[1:-1], but a candidate
+    # k is only eligible for replicate i if k ∈ unique(X_mat[i]) — matching
+    # the loop path's find_knot(xb) which uses unique(xb)[1:-1].  When a
+    # bootstrap resample drops a concentration level, the missing k would
+    # partition the resampled data differently from any present candidate,
+    # producing genuinely different (not equivalent) results.  The gate
+    # `rep_has_k` enforces consistency with the loop path.
     unique_x = np.unique(x)
     candidates = unique_x[1:-1]
 
@@ -481,7 +483,23 @@ def _bootstrap_vectorized_cf(
     best_c = np.zeros(n_reps)
     best_kx = np.full(n_reps, candidates[0])
 
+    # Precompute per-rep min/max once; used in the candidate loop to match
+    # find_knot(xb)'s unique(xb)[1:-1] which excludes the per-rep min and max.
+    rep_x_min = X_mat.min(axis=1)  # (n_reps,)
+    rep_x_max = X_mat.max(axis=1)  # (n_reps,)
+
     for k in candidates:
+        # k is a valid interior candidate for rep i iff:
+        #   1. k ∈ unique(xb_i)  — k appears in the resample
+        #   2. k ≠ min(xb_i)     — k is not the per-rep minimum
+        #   3. k ≠ max(xb_i)     — k is not the per-rep maximum
+        # Conditions 2 & 3 match unique(xb)[1:-1] which strips first/last.
+        # X_mat / x values are exact float64 copies so == is bit-exact.
+        rep_has_k = np.any(X_mat == k, axis=1)  # (n_reps,) bool
+        rep_k_interior = rep_has_k & (rep_x_min != k) & (rep_x_max != k)
+        if not rep_k_interior.any():
+            continue
+
         # Per-rep binary partition at k — mask varies because X_mat varies.
         C = (X_mat <= k).astype(np.float64)  # (n_reps, n)
         L = 1.0 - C
@@ -530,7 +548,7 @@ def _bootstrap_vectorized_cf(
         )
 
         total_rss = rss_n + rss_l
-        improve = total_rss < best_rss
+        improve = (total_rss < best_rss) & rep_k_interior
         if improve.any():
             best_rss[improve] = total_rss[improve]
             best_a[improve] = a_arr[improve]
@@ -557,8 +575,15 @@ def _bootstrap_vectorized_cf(
         best_c[i] = c_r
 
     # ── Grid predictions and summary ──────────────────────────────────────
+    # Reps where best_rss is still inf had fewer than 3 unique x values in
+    # their resample (no interior candidates) — set their predictions to NaN
+    # so they are excluded from nanmean/nanstd, matching the loop path's
+    # try/except → predictions[i] = NaN handling.
+    no_winner = ~np.isfinite(best_rss)  # (n_reps,)
+
     linear = best_a[:, None] * x_grid[None, :] + best_b[:, None]
     predictions = np.maximum(best_c[:, None], linear)
+    predictions[no_winner] = np.nan
 
     with np.errstate(invalid="ignore"):
         mean_pred = np.nanmean(predictions, axis=0)

@@ -631,24 +631,23 @@ class TestCovariance:
 
 
 class TestVectorizedBootstrap:
-    """Vectorized bootstrap: correctness, determinism, and approximate loop agreement.
+    """Vectorized bootstrap: correctness, determinism, and exact loop agreement.
 
-    The vectorized path uses 2-D array operations (full-array masking with
-    ``W * C`` style sums and axis=1 reductions).  These can differ from the
-    loop path's 1-D scalar operations by 1 ULP due to SIMD/FMA arithmetic.
-    For nearly-tied Phase-1 candidates this can flip the winner, producing
-    statistically valid but numerically distinct results.  The vectorized path
-    is therefore kept as an *explicit fast alternative*, while the loop path
-    remains the default in ``PiecewiseCF._ensure_boot_summary``.
+    The vectorized path gates each candidate k on whether k is an INTERIOR
+    point of unique(xb_i) for replicate i — matching find_knot(xb)[1:-1].
+    This ensures knot selection is bit-identical to the loop path.  The only
+    residual differences are sub-ULP FP accumulation in numpy's 2-D axis=1
+    reductions vs the loop's 1-D scalar sums (max ~2e-7 absolute on the
+    reference dataset, <1e-14 relative — machine-precision noise).
 
     Tests here verify:
     - Determinism (same seed → same output)
     - Different seeds → different output
     - Memory guard fallback emits ResourceWarning and returns valid summary
     - LOD regression is unaffected (LOD is analytical, no bootstrap)
-    - Statistical approximate agreement with the loop path for the reference
-      peptide ADTGIAVEGATDAAR (tolerance 0.05 in CV — confirmed by empirical
-      runs that this peptide's FP flip rate is zero for seed=42, n=100)
+    - All 26 finite-LOD reference peptides agree with the loop path to 1e-6
+      in CV and 1e-3 relative in mean predictions (covers FP noise budget)
+    - ADTGIAVEGATDAAR in particular agrees to 1e-10 (no FP noise for seed=42)
     """
 
     @pytest.fixture()
@@ -666,10 +665,10 @@ class TestVectorizedBootstrap:
         x, _, _ = pep_data
         return np.linspace(x.min(), x.max(), 200)
 
-    # H6 — approximate agreement on ADTGIAVEGATDAAR (no FP flips for seed=42)
+    # H6 — ADTGIAVEGATDAAR: shows 0 FP noise, so can hold to 1e-10
     def test_h6_cv_profile_agrees_with_loop(self, pep_data, x_grid):
-        """For ADTGIAVEGATDAAR seed=42, no Phase-1 FP flips occur, so CV
-        profiles must agree to better than 1e-10."""
+        """ADTGIAVEGATDAAR seed=42 shows zero FP accumulation; CV must agree
+        to better than 1e-10."""
         x, y, W = pep_data
         n_reps, seed = 100, 42
 
@@ -754,3 +753,47 @@ class TestVectorizedBootstrap:
                     assert abs(got - expected) < 1e-4, (
                         f"{pep}: LOD regression after C5: expected {expected}, got {got}"
                     )
+
+    def test_h6_all_peptides_agree_with_loop(self, reference_data):
+        """Vectorized path must agree with the loop path on ALL 26 finite-LOD
+        reference peptides (n_reps=200, seed=42).
+
+        Tolerance: max|cv_diff| < 1e-6 and max|mean_diff|/mean_pred < 1e-6.
+        This comfortably covers the observed FP accumulation budget (~2e-7 abs,
+        <1e-14 relative) while being tight enough to catch any knot-selection
+        disagreement (which produces diffs of order 1e2–1e4 absolute).
+        """
+        n_reps, seed = 200, 42
+        failures = []
+        for pep in np.unique(reference_data.peptide):
+            mask = reference_data.peptide == pep
+            x = reference_data.concentration[mask]
+            y = reference_data.area[mask]
+            w = inverse_sqrt_weights(x)
+            W = w**2
+
+            cf = PiecewiseCF(n_boot_reps=0, seed=seed).fit(x, y)
+            lod = cf.lod()
+            if not np.isfinite(lod):
+                continue
+
+            x_grid = np.linspace(lod, float(np.max(x)), num=100)
+            _, sl = _bootstrap_loop_cf(x, y, W, x_grid, n_reps, seed)
+            _, sv = _bootstrap_vectorized_cf(x, y, W, x_grid, n_reps, seed)
+
+            fin = np.isfinite(sl["cv"]) & np.isfinite(sv["cv"])
+            d_cv = float(np.max(np.abs(sl["cv"][fin] - sv["cv"][fin]))) if fin.any() else 0.0
+
+            mean_scale = float(np.nanmean(np.abs(sl["mean"])))
+            d_mean_rel = float(np.max(np.abs(sl["mean"] - sv["mean"]))) / max(mean_scale, 1e-12)
+
+            if d_cv >= 1e-6 or d_mean_rel >= 1e-6:
+                failures.append((pep, d_cv, d_mean_rel))
+
+        assert not failures, (
+            f"Vectorized/loop disagreement on {len(failures)} peptide(s):\n"
+            + "\n".join(
+                f"  {p}: max|cv_diff|={dc:.3e}, max|mean_diff|/mean={dm:.3e}"
+                for p, dc, dm in failures
+            )
+        )
