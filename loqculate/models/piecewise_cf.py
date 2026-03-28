@@ -246,6 +246,59 @@ class PiecewiseCF(CalibrationModel):
         }
 
     # ------------------------------------------------------------------
+    # covariance
+    # ------------------------------------------------------------------
+
+    def covariance(self) -> Optional[np.ndarray]:
+        """Return the 2x2 parameter covariance matrix for the linear segment.
+
+        Shape ``(2, 2)``::
+
+            [[var(slope),          cov(slope, intercept)],
+             [cov(slope, intercept), var(intercept)     ]]
+
+        Derived from the stored Gram matrix inverse scaled by the residual
+        mean squared error of the *linear* segment (``ddof=1`` to match the
+        convention used throughout the package).
+
+        Returns ``None`` when:
+
+        - the model has not been fitted yet, or
+        - ``slope == 0`` (constraint 1 clamped the linear segment to a
+          horizontal weighted mean — the 2-parameter model was never fit
+          and the Gram inverse is undefined).
+        """
+        if not self.is_fitted_:
+            return None
+        if self._gram_inv is None:
+            return None
+
+        # Residuals on the linear segment only (x > knot_x).
+        x = self.x_
+        y = self.y_
+        W = self.weights_**2
+        knot_x = self.params_["knot_x"]
+        a = self.params_["slope"]
+        b = self.params_["intercept_linear"]
+
+        lin_mask = x > knot_x
+        x_lin = x[lin_mask]
+        y_lin = y[lin_mask]
+        W_lin = W[lin_mask]
+        n_lin = int(np.sum(lin_mask))
+
+        if n_lin < 2:
+            # Cannot compute ddof=1 MSE with fewer than 2 linear observations.
+            return None
+
+        residuals = y_lin - (a * x_lin + b)
+        # Weighted RSS for the linear segment.
+        wrss = float(np.sum(W_lin * residuals**2))
+        mse = wrss / (n_lin - 2)  # ddof = 2 (slope + intercept)
+
+        return mse * self._gram_inv
+
+    # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------
 
@@ -327,6 +380,19 @@ def _bootstrap_loop_cf(
     """
     n = len(x)
     n_grid = len(x_grid)
+
+    # No replicates requested — return an empty predictions array and a summary
+    # filled with NaN/inf.  Avoids calling nanmean/nanstd on a (0, n_grid) array,
+    # which would emit "Mean of empty slice" RuntimeWarnings.
+    if n_reps == 0:
+        summary = {
+            "mean": np.full(n_grid, np.nan),
+            "std": np.full(n_grid, np.nan),
+            "cv": np.full(n_grid, np.inf),
+            "pct_5": np.full(n_grid, np.nan),
+            "pct_95": np.full(n_grid, np.nan),
+        }
+        return np.empty((0, n_grid)), summary
 
     # Degenerate shortcut: constant signal, no useful bootstrap.
     if np.unique(y).size <= 1:

@@ -484,3 +484,140 @@ class TestEdgeCases:
         assert np.isfinite(cf.lod()), "pre-condition: LOD must be finite for this test"
         loq = cf.loq()
         assert loq == np.inf, f"loq() with n_boot_reps=0 must return inf, got {loq}"
+
+
+# ---------------------------------------------------------------------------
+# Test 8: covariance() — C4
+# ---------------------------------------------------------------------------
+
+
+class TestCovariance:
+    """Tests for PiecewiseCF.covariance().
+
+    The method returns the 2x2 parameter covariance matrix for the linear
+    segment: Cov = MSE_linear * _gram_inv where MSE uses ddof=2 (slope +
+    intercept).  Returns None for unfitted models or slope=0 models.
+    """
+
+    def test_covariance_shape_and_type(self, reference_data):
+        """covariance() must return a (2, 2) numpy array for a normally fitted
+        peptide (finite LOD, slope > 0).
+        """
+        pep = "ADTGIAVEGATDAAR"
+        mask = reference_data.peptide == pep
+        x = reference_data.concentration[mask]
+        y = reference_data.area[mask]
+        cf = PiecewiseCF(n_boot_reps=0, seed=42).fit(x, y)
+        assert cf.params_["slope"] > 0, "pre-condition: peptide must have slope > 0"
+
+        cov = cf.covariance()
+        assert cov is not None, "covariance() must not return None for a slope>0 peptide"
+        assert isinstance(cov, np.ndarray)
+        assert cov.shape == (2, 2)
+
+    def test_covariance_diagonal_nonnegative(self, reference_data):
+        """Diagonal entries of the covariance matrix are variances — they must
+        be non-negative for any valid WLS fit.
+        """
+        pep = "ADTGIAVEGATDAAR"
+        mask = reference_data.peptide == pep
+        x = reference_data.concentration[mask]
+        y = reference_data.area[mask]
+        cf = PiecewiseCF(n_boot_reps=0, seed=42).fit(x, y)
+        cov = cf.covariance()
+        assert cov is not None
+        assert cov[0, 0] >= 0, f"var(slope) = {cov[0, 0]} is negative"
+        assert cov[1, 1] >= 0, f"var(intercept) = {cov[1, 1]} is negative"
+
+    def test_covariance_is_symmetric(self, reference_data):
+        """The covariance matrix must be symmetric to machine precision."""
+        pep = "ADTGIAVEGATDAAR"
+        mask = reference_data.peptide == pep
+        x = reference_data.concentration[mask]
+        y = reference_data.area[mask]
+        cf = PiecewiseCF(n_boot_reps=0, seed=42).fit(x, y)
+        cov = cf.covariance()
+        assert cov is not None
+        np.testing.assert_allclose(
+            cov,
+            cov.T,
+            atol=1e-15,
+            err_msg="covariance matrix is not symmetric",
+        )
+
+    def test_covariance_matches_lstsq_reference(self, reference_data):
+        """The covariance matrix must agree with a reference computed directly
+        via np.linalg.lstsq on the same linear segment, within rtol=1e-8.
+
+        Reference formula:
+            H = W^(1/2) * [x_lin | 1]    (design matrix, weighted by sqrt(W))
+            beta, _, _, _ = lstsq(H, W^(1/2) * y_lin)
+            residuals = y_lin - (a * x_lin + intercept)
+            wrss = sum(W * residuals^2)
+            mse = wrss / (n_lin - 2)
+            cov_ref = mse * inv(H.T @ H)    # == mse * _gram_inv
+        """
+        pep = "VTAVVESPEGER"
+        mask = reference_data.peptide == pep
+        x = reference_data.concentration[mask]
+        y = reference_data.area[mask]
+        w = inverse_sqrt_weights(x)
+        W = w**2
+
+        cf = PiecewiseCF(n_boot_reps=0, seed=42).fit(x, y)
+        assert cf.params_["slope"] > 0, "pre-condition: test peptide must have slope > 0"
+
+        knot_x = cf.params_["knot_x"]
+        lin_mask = x > knot_x
+        x_lin = x[lin_mask]
+        y_lin = y[lin_mask]
+        W_lin = W[lin_mask]
+        n_lin = int(np.sum(lin_mask))
+
+        # Build weighted design matrix
+        sqrt_W = np.sqrt(W_lin)
+        H = np.column_stack([x_lin * sqrt_W, sqrt_W])  # [x | 1] * sqrt(W)
+        beta, _, _, _ = np.linalg.lstsq(H, y_lin * sqrt_W, rcond=None)
+        a_ref, b_ref = beta[0], beta[1]
+
+        residuals = y_lin - (a_ref * x_lin + b_ref)
+        wrss = float(np.sum(W_lin * residuals**2))
+        mse = wrss / (n_lin - 2)
+
+        G = H.T @ H  # = [[sum(W*x^2), sum(W*x)], [sum(W*x), sum(W)]]
+        cov_ref = mse * np.linalg.inv(G)
+
+        cov_cf = cf.covariance()
+        assert cov_cf is not None
+        np.testing.assert_allclose(
+            cov_cf,
+            cov_ref,
+            rtol=1e-8,
+            err_msg="covariance() does not match lstsq reference",
+        )
+
+    def test_covariance_none_when_not_fitted(self):
+        """covariance() must return None (not raise) before fit() is called."""
+        cf = PiecewiseCF(n_boot_reps=0, seed=42)
+        assert cf.covariance() is None
+
+    def test_covariance_none_when_slope_zero(self):
+        """covariance() must return None when slope was clamped to 0.
+        The linear segment was fit as a weighted mean (1-parameter); the
+        2x2 Gram inverse is undefined for that model.
+        """
+        rng = np.random.default_rng(7)
+        x_noise = np.repeat([0.1, 0.5, 1.0], 3)
+        y_noise = 10 + rng.normal(0, 0.2, 9)
+        x_lin = np.repeat([2.0, 5.0, 10.0], 3)
+        y_lin = 12 - 0.5 * x_lin + rng.normal(0, 0.2, 9)  # decreasing → slope=0
+
+        cf = PiecewiseCF(n_boot_reps=0, seed=42).fit(
+            np.concatenate([x_noise, x_lin]),
+            np.concatenate([y_noise, y_lin]),
+        )
+        assert cf.params_["slope"] == 0.0, "pre-condition: slope must be clamped to 0"
+        assert cf.covariance() is None, (
+            "covariance() must return None when slope=0; "
+            "the 2x2 Gram inverse does not correspond to the fitted model"
+        )
