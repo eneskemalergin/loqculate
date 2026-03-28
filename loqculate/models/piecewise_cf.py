@@ -116,10 +116,19 @@ class PiecewiseCF(CalibrationModel):
         # Compute and cache the 2x2 Gram matrix inverse for the linear segment.
         # This is the inverse of [[sum(W*x^2), sum(W*x)], [sum(W*x), sum(W)]].
         # Stored now at zero marginal cost so covariance() (C4) needs no refit.
-        lin_mask = x > kr.knot_x
-        x_lin = x[lin_mask]
-        W_lin = W[lin_mask]
-        self._gram_inv = _gram_inverse(x_lin, W_lin)
+        #
+        # Guard: when constraint 1 clamped slope to 0, the linear segment was
+        # fit as a weighted mean (1-parameter horizontal line).  Storing a 2x2
+        # Gram inverse would correspond to a 2-parameter model that was never
+        # actually fit, producing wrong covariance estimates in C4.  Use None
+        # to signal "covariance undefined" for this degenerate case.
+        if kr.slope > 0:
+            lin_mask = x > kr.knot_x
+            x_lin = x[lin_mask]
+            W_lin = W[lin_mask]
+            self._gram_inv = _gram_inverse(x_lin, W_lin)
+        else:
+            self._gram_inv = None
 
         # Invalidate caches
         self._lod_cache = {}

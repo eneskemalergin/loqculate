@@ -334,3 +334,153 @@ class TestRegistry:
     def test_piecewise_cf_in_registry(self):
         assert "piecewise_cf" in MODEL_REGISTRY
         assert MODEL_REGISTRY["piecewise_cf"] is PiecewiseCF
+
+
+# ---------------------------------------------------------------------------
+# Test 7: edge-case correctness (bugs found during rigorous C3 review)
+# ---------------------------------------------------------------------------
+
+
+class TestEdgeCases:
+    """Targeted tests for properties and failure modes found during code review.
+
+    These tests were written BEFORE the fixes were confirmed to pass — i.e.,
+    they are genuine regression guards, not post-hoc tests designed to pass.
+    """
+
+    # ------------------------------------------------------------------
+    # Bug: _gram_inv stored for slope=0 (constraint 1 fired)
+    # ------------------------------------------------------------------
+
+    def test_gram_inv_is_none_when_slope_clamped_to_zero(self):
+        """When _fit_and_constrain clamps slope to 0 (negative unconstrained
+        slope in the linear region), the actual fit is a 1-parameter weighted
+        mean.  Storing a 2x2 Gram inverse for a 2-parameter model that was
+        never fit would produce wrong covariance estimates in C4.  It must be
+        None instead.
+        """
+        # Noise region: flat at y ~ 10
+        # "Linear" region: decreasing y (forces negative unconstrained slope,
+        #  which constraint 1 clamps to 0)
+        rng = np.random.default_rng(7)
+        x_noise = np.repeat([0.1, 0.5, 1.0], 3)
+        y_noise = 10 + rng.normal(0, 0.2, 9)
+        x_lin = np.repeat([2.0, 5.0, 10.0], 3)
+        y_lin = 12 - 0.5 * x_lin + rng.normal(0, 0.2, 9)  # decreasing
+        x = np.concatenate([x_noise, x_lin])
+        y = np.concatenate([y_noise, y_lin])
+
+        cf = PiecewiseCF(n_boot_reps=0, seed=42).fit(x, y)
+        assert cf.params_["slope"] == 0.0, (
+            "Test setup failure: expected constraint 1 to clamp slope to 0"
+        )
+        assert cf._gram_inv is None, (
+            "_gram_inv must be None when slope was clamped to 0 by constraint 1; "
+            "the 2x2 Gram inverse belongs to an unconstrained model that was never fit"
+        )
+
+    # ------------------------------------------------------------------
+    # Sort-order invariance
+    # ------------------------------------------------------------------
+
+    def test_lod_invariant_to_sort_order(self, reference_data):
+        """PiecewiseCF.lod() must return the same value regardless of the
+        order in which (x, y) pairs are presented.  find_knot uses unique(x)
+        for candidate knots and boolean masks throughout — all sort-order
+        independent — but this must be confirmed end-to-end.
+        """
+        pep = "SVEDFMAAMQR"
+        mask = reference_data.peptide == pep
+        x = reference_data.concentration[mask]
+        y = reference_data.area[mask]
+
+        rng = np.random.default_rng(99)
+        perm = rng.permutation(len(x))
+
+        lod_original = PiecewiseCF(n_boot_reps=0, seed=42).fit(x, y).lod()
+        lod_shuffled = PiecewiseCF(n_boot_reps=0, seed=42).fit(x[perm], y[perm]).lod()
+
+        # Floating-point aggregates (sum of W, W*x, W*x^2) accumulate in a
+        # different order → up to ~1 ULP difference.  rtol=1e-10 distinguishes
+        # "same result, FP noise" from "different knot selected" (which would
+        # differ by multiple percent).
+        np.testing.assert_allclose(
+            lod_original,
+            lod_shuffled,
+            rtol=1e-10,
+            err_msg=(
+                f"LOD changed with sort order beyond FP noise: "
+                f"sorted={lod_original:.10f}, shuffled={lod_shuffled:.10f}"
+            ),
+        )
+
+    # ------------------------------------------------------------------
+    # predict() monotonicity
+    # ------------------------------------------------------------------
+
+    def test_predict_nondecreasing_on_positive_x(self, reference_data):
+        """predict() implements max(c, a*x + b) with a >= 0 and c >= b.  For
+        any sorted non-negative x grid, predictions must be non-decreasing.
+        """
+        for pep in ["SVEDFMAAMQR", "ADTGIAVEGATDAAR", "KQAIVQK"]:
+            mask = reference_data.peptide == pep
+            x = reference_data.concentration[mask]
+            y = reference_data.area[mask]
+            cf = PiecewiseCF(n_boot_reps=0, seed=42).fit(x, y)
+
+            x_new = np.linspace(0.0, float(np.max(x)) * 2, 500)
+            preds = cf.predict(x_new)
+            diffs = np.diff(preds)
+            assert np.all(diffs >= -1e-12), (
+                f"{pep}: predict() is not non-decreasing; min diff = {diffs.min():.2e}"
+            )
+
+    # ------------------------------------------------------------------
+    # Refit clears all cached state
+    # ------------------------------------------------------------------
+
+    def test_refit_clears_caches_and_bootstrap(self, reference_data):
+        """Calling fit() a second time on the same model object must discard
+        all cached LOD, LOQ, and bootstrap state from the first fit.  Stale
+        caches after refit would silently return results for the wrong data.
+        """
+        pep = "ADTGIAVEGATDAAR"
+        mask = reference_data.peptide == pep
+        x = reference_data.concentration[mask]
+        y = reference_data.area[mask]
+
+        cf = PiecewiseCF(n_boot_reps=20, seed=42).fit(x, y)
+        # Populate all caches
+        _ = cf.lod()
+        _ = cf.loq()
+        assert cf._lod_cache, "pre-condition: _lod_cache must be populated"
+        assert cf._loq_cache, "pre-condition: _loq_cache must be populated"
+        assert cf._boot_summary is not None, "pre-condition: bootstrap must be run"
+
+        # Refit — caches must be wiped
+        cf.fit(x, y)
+        assert not cf._lod_cache, "_lod_cache must be empty after refit"
+        assert not cf._loq_cache, "_loq_cache must be empty after refit"
+        assert cf._boot_summary is None, "_boot_summary must be None after refit"
+        assert cf._x_grid is None, "_x_grid must be None after refit"
+
+    # ------------------------------------------------------------------
+    # LOQ with zero bootstrap replicates
+    # ------------------------------------------------------------------
+
+    def test_loq_zero_boot_reps_returns_inf(self, reference_data):
+        """PiecewiseCF(n_boot_reps=0).loq() must return np.inf without raising.
+
+        With 0 bootstrap replicates the CV profile is undefined; LOQ is
+        undeterminable.  inf is the correct sentinel — not 0, not NaN, not
+        the LOD value.
+        """
+        pep = "ADTGIAVEGATDAAR"  # finite LOD: bootstrap actually runs (0 reps)
+        mask = reference_data.peptide == pep
+        x = reference_data.concentration[mask]
+        y = reference_data.area[mask]
+
+        cf = PiecewiseCF(n_boot_reps=0, seed=42).fit(x, y)
+        assert np.isfinite(cf.lod()), "pre-condition: LOD must be finite for this test"
+        loq = cf.loq()
+        assert loq == np.inf, f"loq() with n_boot_reps=0 must return inf, got {loq}"
