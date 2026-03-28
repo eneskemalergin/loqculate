@@ -20,7 +20,7 @@
 
 - **Closed-form knot search** (`PiecewiseCF`): fits $y = \max(c, ax + b)$ by exhaustively searching all interior concentration values as candidate partition boundaries. No optimizer, no convergence failures, no initial-guess sensitivity. 15.8× full-pipeline speedup over `PiecewiseWLS`. Default since v0.3.0.
 - A **sliding-window LOQ rule** that reduces FDR from ~100% to <5%: LOQ is declared at $C_i$ only when $\mathrm{CV}(C_i)$, $\mathrm{CV}(C_{i+1})$, and $\mathrm{CV}(C_{i+2})$ all fall below `cv_thresh`. Three consecutive passing concentrations, not one.
-- **11.4× lower memory** per peptide vs the original scripts (VmRSS, 1 000 peptide batch). Batch throughput is 3.3× faster at 10 000 peptides due to reduced GC pressure (see [`comparison_report.ipynb`](comparison_report.ipynb))
+- **11.4× lower memory** per peptide vs the original scripts (VmRSS, 1 000 peptide batch). Batch throughput is 3.3× faster at 10 000 peptides due to reduced GC pressure (measured in `comparison_report.ipynb` against `OriginalWLS`)
 - **EmpiricalCV** as a model-free alternative to PiecewiseWLS. Fast, but FDR is higher at low replicate counts (n < 5).
 - **`loqculate.compat`**: drop-in `OriginalWLS` and `OriginalCV` wrappers that reproduce paper results without the legacy scripts. Registered in `MODEL_REGISTRY` and usable via `--model original_wls`.
 - **Bootstrap guard** preventing infinite loops on zero-signal replicates
@@ -160,13 +160,13 @@ Verbatim port of `old/loq_by_cv.py` `calculate_LOQ_byCV()`. LOQ is the lowest po
 
 ## Configuration & defaults
 
-| Parameter   | Default         | Description                                                              |
-| ----------- | --------------- | ------------------------------------------------------------------------ |
-| `cv_thresh` | `0.20`          | CV threshold; LOQ requires CV < this value                               |
-| `window`    | `3`             | Consecutive passing concentration points required                        |
-| `n_boot`    | `100`           | Bootstrap resamples for LOD/LOQ CI estimation                            |
-| `std_mult`  | `2`             | Noise-floor multiplier for LOD ($\mathrm{LOD} = \alpha + 2\sigma$)       |
-| `model`     | `piecewise_cf`  | Active model; also accepts `piecewise_wls`, `cv_empirical`, `original_wls`, `original_cv` |
+| Parameter   | Default        | Description                                                                               |
+| ----------- | -------------- | ----------------------------------------------------------------------------------------- |
+| `cv_thresh` | `0.20`         | CV threshold; LOQ requires CV < this value                                                |
+| `window`    | `3`            | Consecutive passing concentration points required                                         |
+| `n_boot`    | `100`          | Bootstrap resamples for LOD/LOQ CI estimation                                             |
+| `std_mult`  | `2`            | Noise-floor multiplier for LOD ($\mathrm{LOD} = \alpha + 2\sigma$)                        |
+| `model`     | `piecewise_cf` | Active model; also accepts `piecewise_wls`, `cv_empirical`, `original_wls`, `original_cv` |
 
 Pass these as CLI flags (`--cv_thresh 0.15`) or keyword arguments to `.fit()`.
 
@@ -176,24 +176,20 @@ Pass these as CLI flags (`--cv_thresh 0.15`) or keyword arguments to `.fit()`.
 
 Machine: AMD Ryzen 9 3950X, 32 threads. FDR measured on 300 simulated null curves across 4-14 concentration levels (window=3). Throughput measured on real DIA-NN data.
 
-| Metric                                      |  PiecewiseCF (v0.3.0)  | PiecewiseWLS | EmpiricalCV |   OriginalWLS    | OriginalCV |
-| ------------------------------------------- | :--------------------: | :----------: | :---------: | :--------------: | :--------: |
-| Per-fit, single-threaded                    |        ~0.73 ms        |   ~1.96 ms   |  ~0.02 ms   |     ~1.8 ms      |  ~0.03 ms  |
-| Full pipeline vs WLS (n_boot=200)           |    **15.8× faster**    |   baseline   |     N/A     |       N/A        |    N/A     |
-| Null FDR, window=3 (range over n_conc 4-14) |         0-2%           |    0-2%      |    2-18%    |       1-2%       |   64-99%   |
-| Memory per peptide (VmRSS)                  |       0.013 MB         |   0.013 MB   |     ~0      |     0.151 MB     |     ~0     |
+| Metric                                      | PiecewiseCF (v0.3.0) | PiecewiseWLS | EmpiricalCV | OriginalWLS | OriginalCV |
+| ------------------------------------------- | :------------------: | :----------: | :---------: | :---------: | :--------: |
+| Per-fit, single-threaded                    |       ~0.73 ms       |   ~1.96 ms   |  ~0.02 ms   |   ~1.8 ms   |  ~0.03 ms  |
+| Full pipeline vs WLS (n_boot=200)           |   **15.8× faster**   |   baseline   |     N/A     |     N/A     |    N/A     |
+| Null FDR, window=3 (range over n_conc 4-14) |         0-2%         |     0-2%     |    2-18%    |    1-2%     |   64-99%   |
+| Memory per peptide (VmRSS)                  |       0.013 MB       |   0.013 MB   |     ~0      |  0.151 MB   |     ~0     |
 
-PiecewiseCF replaces the TRF optimizer with a discrete knot search (exhaustive enumeration of interior candidate boundaries). On 27-peptide reference data: 0 convergence failures, globally optimal partition on 13/18 cases where models disagree, and one additional finite-LOD rescue vs PiecewiseWLS. OriginalCV FDR reaches 64-99% due to the single-point rule. Full benchmark data and reproduction commands in [`comparison_report.ipynb`](comparison_report.ipynb).
+PiecewiseCF replaces the TRF optimizer with a discrete knot search (exhaustive enumeration of interior candidate boundaries). On 27-peptide reference data: 0 convergence failures, globally optimal partition on 13/18 cases where models disagree, and one additional finite-LOD rescue vs PiecewiseWLS. OriginalCV FDR reaches 64-99% due to the single-point rule. Raw benchmark results are in `tmp/results/` (JSON); reproduction commands are in `benchmarks/`.
 
 ---
 
 ## Design decisions & validation
 
-See [`comparison_report.ipynb`](comparison_report.ipynb) for a full frozen, 12-section comparison of `loqculate` vs the original Pino 2020 scripts, including:
-
-- FDR and TPR across concentration-level density (4-14 levels) and replicate count (2-20)
-- LOQ accuracy and precision benchmarks
-- Per-fit speed and whole-proteome throughput scaling (up to 10,000 peptides)
+[`comparison_report.ipynb`](comparison_report.ipynb) is a frozen 12-section validation notebook comparing the **original Pino 2020 scripts** (`OriginalWLS`, `OriginalCV`) to the v0.2.x `loqculate` models (`PiecewiseWLS`, `EmpiricalCV`). It covers FDR and TPR across concentration-level density (4-14 levels) and replicate count (2-20), LOQ accuracy and precision benchmarks, and per-fit speed and throughput scaling up to 10,000 peptides. It does not cover `PiecewiseCF` or any v0.3.0 changes. A systematic comparison of PiecewiseCF against PiecewiseWLS is tracked in `benchmarks/bench_knot_vs_curvefit.py` and `benchmarks/bench_vectorized_boot.py`.
 
 ---
 
