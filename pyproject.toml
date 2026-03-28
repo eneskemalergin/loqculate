@@ -28,6 +28,7 @@ dependencies = [
     "matplotlib>=3.7",
     "tqdm>=4.64",
     "lmfit>=1.2",
+    "numba>=0.64.0",
 ]
 
 [project.optional-dependencies]
