@@ -42,6 +42,16 @@ class TestWeightedMean:
         assert mean == pytest.approx(2.0)
         assert rss == pytest.approx(0.0)
 
+    def test_empty_input_returns_nan_no_warning(self):
+        """weighted_mean on empty arrays must return (nan, 0.0) without warning."""
+        import warnings
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            mean, rss = weighted_mean(np.array([]), np.array([]))
+        assert np.isnan(mean)
+        assert rss == pytest.approx(0.0)
+
 
 # ---------------------------------------------------------------------------
 # solve_2x2_wls

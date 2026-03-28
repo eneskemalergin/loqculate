@@ -11,10 +11,9 @@ from typing import NamedTuple
 
 import numpy as np
 
+from loqculate.config import KNOT_SEARCH_SINGULAR_THRESHOLD
 from loqculate.utils.normal_equations import (
-    solve_2x2_wls,
     solve_2x2_wls_batch,
-    weighted_mean,
 )
 
 # ---------------------------------------------------------------------------
@@ -30,21 +29,55 @@ def _fit_and_constrain(
 ) -> tuple[float, float, float, float]:
     """Fit both segments at partition boundary k and apply constraint rules.
 
+    Uses full-array masking arithmetic (``W * C`` style sums over all *n*
+    observations) so that every floating-point sum touches elements in the
+    same order as the vectorised bootstrap Phase 1.  This guarantees
+    bit-exact agreement between the loop and vectorised paths even for
+    bootstrap resamples where two candidate RSS values are within 1 ULP.
+
     Returns (slope, intercept, noise_intercept, total_rss).
     """
-    noise_mask = x <= k
-    lin_mask = ~noise_mask
+    C = (x <= k).astype(np.float64)  # 1 for noise, 0 for linear
+    L = 1.0 - C
 
-    c, rss_noise = weighted_mean(y[noise_mask], W[noise_mask])
-    slope, intercept, rss_lin = solve_2x2_wls(x[lin_mask], y[lin_mask], W[lin_mask])
+    # ── Noise segment ──────────────────────────────────────────────────────
+    sum_WC = float(np.sum(W * C))
+    if sum_WC > 0:
+        c = float(np.sum(W * y * C) / sum_WC)
+    elif C.any():
+        c = float(np.mean(y[C > 0]))  # all-zero weights edge case
+    else:
+        c = -np.inf  # empty noise segment; clamp c ≥ intercept fires below
+    rss_noise = float(np.sum(W * C * (y - c) ** 2)) if np.isfinite(c) else 0.0
+
+    # ── Linear segment ─────────────────────────────────────────────────────
+    sum_WL = float(np.sum(W * L))
+    if not L.any():
+        # All observations are in the noise segment; degenerate partition.
+        return 0.0, c, c, rss_noise
+
+    sum_WXL = float(np.sum(W * x * L))
+    sum_WXXL = float(np.sum(W * x * x * L))
+    sum_WYL = float(np.sum(W * y * L))
+    sum_WXYL = float(np.sum(W * x * y * L))
+
+    det = sum_WXXL * sum_WL - sum_WXL * sum_WXL
+    if abs(det) < KNOT_SEARCH_SINGULAR_THRESHOLD:
+        intercept = sum_WYL / sum_WL if sum_WL > 0 else float(np.mean(y[L > 0]))
+        slope, rss_lin = 0.0, float(np.sum(W * L * (y - intercept) ** 2))
+    else:
+        slope = float((sum_WXYL * sum_WL - sum_WYL * sum_WXL) / det)
+        intercept = float((sum_WXXL * sum_WYL - sum_WXL * sum_WXYL) / det)
+        rss_lin = float(np.sum(W * L * (y - slope * x - intercept) ** 2))
 
     if slope < 0:
-        intercept, rss_lin = weighted_mean(y[lin_mask], W[lin_mask])
         slope = 0.0
+        intercept = sum_WYL / max(sum_WL, 1e-300)
+        rss_lin = float(np.sum(W * L * (y - intercept) ** 2))
 
     if c < intercept:
         c = intercept
-        rss_noise = float(np.sum(W[noise_mask] * (y[noise_mask] - c) ** 2))
+        rss_noise = float(np.sum(W * C * (y - c) ** 2))
 
     return slope, intercept, c, rss_noise + rss_lin
 

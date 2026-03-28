@@ -317,7 +317,14 @@ class PiecewiseCF(CalibrationModel):
         x_grid = np.linspace(lod_val, float(np.max(self.x_)), num=self.grid_points)
         W = self.weights_**2
 
-        _, summary = _bootstrap_vectorized_cf(
+        # Use the loop path as the default: it is the reference implementation
+        # and is statistically correct.  The vectorized path (_bootstrap_vectorized_cf)
+        # uses 2-D axis-sum operations that can differ from 1-D scalar operations by
+        # 1 ULP due to SIMD/FMA arithmetic.  For nearly-tied Phase-1 candidates this
+        # may flip the winner, producing different (not just rounded) results for
+        # some peptides.  The vectorized path is kept as an explicit fast alternative
+        # only (e.g., for benchmarks).
+        _, summary = _bootstrap_loop_cf(
             self.x_,
             self.y_,
             W,
@@ -541,10 +548,12 @@ def _bootstrap_vectorized_cf(
         ai = best_a[i]
         if ai <= 0:
             continue
+        xi = X_mat[i]
         x_join_i = (best_c[i] - best_b[i]) / ai
-        if not (x.min() < x_join_i < x.max()):
+        # Use bootstrap-resample bounds, matching how find_knot() checks in the loop path.
+        if not (xi.min() < x_join_i < xi.max()):
             continue
-        sl_r, int_r, c_r, _ = _fit_and_constrain(X_mat[i], Y_mat[i], W_mat[i], x_join_i)
+        sl_r, int_r, c_r, _ = _fit_and_constrain(xi, Y_mat[i], W_mat[i], x_join_i)
         best_a[i] = sl_r
         best_b[i] = int_r
         best_c[i] = c_r

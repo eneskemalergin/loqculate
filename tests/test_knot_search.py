@@ -438,3 +438,52 @@ class TestBatch:
         Y_matrix = np.ones((5, 4))
         with pytest.raises(ValueError, match="3 unique x"):
             find_knot_batch(x, Y_matrix, W)
+
+
+# ---------------------------------------------------------------------------
+# Edge cases: empty segments in _fit_and_constrain
+# ---------------------------------------------------------------------------
+
+
+class TestFitAndConstrainEmptySegments:
+    """_fit_and_constrain must not warn or raise when one segment is empty."""
+
+    def test_empty_noise_segment_no_warning(self):
+        """k smaller than all x → noise segment is empty."""
+        import warnings
+
+        from loqculate.utils.knot_search import _fit_and_constrain
+
+        x = np.array([2.0, 3.0, 4.0, 5.0])
+        y = np.array([1.0, 2.0, 3.0, 4.0])
+        W = np.ones(4)
+        k = 1.0  # all x > k → noise_mask is all-False
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            slope, intercept, c, rss = _fit_and_constrain(x, y, W, k)
+
+        # Model degenerates to pure linear fit; constraint c ≥ intercept fires.
+        assert np.isfinite(slope)
+        assert np.isfinite(intercept)
+        assert c == pytest.approx(intercept)  # clamped up from -inf
+        assert rss >= 0.0
+
+    def test_empty_linear_segment_no_warning(self):
+        """k >= max(x) → linear segment is empty."""
+        import warnings
+
+        from loqculate.utils.knot_search import _fit_and_constrain
+
+        x = np.array([1.0, 2.0, 3.0, 4.0])
+        y = np.array([10.0, 10.5, 9.5, 10.0])
+        W = np.ones(4)
+        k = 5.0  # all x <= k → lin_mask is all-False
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            slope, intercept, c, rss = _fit_and_constrain(x, y, W, k)
+
+        assert slope == 0.0  # degenerate: no linear segment
+        assert np.isfinite(c)
+        assert rss >= 0.0

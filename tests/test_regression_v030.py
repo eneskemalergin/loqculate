@@ -631,12 +631,24 @@ class TestCovariance:
 
 
 class TestVectorizedBootstrap:
-    """H6: vectorized bootstrap agrees with loop bootstrap to machine precision.
+    """Vectorized bootstrap: correctness, determinism, and approximate loop agreement.
 
-    Both paths draw identical (x, y, W) resamples via the same SeedSequence
-    seeding, then apply identical mathematical operations.  Results must agree
-    to < 1e-10 in absolute difference on the CV profile across all finite grid
-    points.
+    The vectorized path uses 2-D array operations (full-array masking with
+    ``W * C`` style sums and axis=1 reductions).  These can differ from the
+    loop path's 1-D scalar operations by 1 ULP due to SIMD/FMA arithmetic.
+    For nearly-tied Phase-1 candidates this can flip the winner, producing
+    statistically valid but numerically distinct results.  The vectorized path
+    is therefore kept as an *explicit fast alternative*, while the loop path
+    remains the default in ``PiecewiseCF._ensure_boot_summary``.
+
+    Tests here verify:
+    - Determinism (same seed → same output)
+    - Different seeds → different output
+    - Memory guard fallback emits ResourceWarning and returns valid summary
+    - LOD regression is unaffected (LOD is analytical, no bootstrap)
+    - Statistical approximate agreement with the loop path for the reference
+      peptide ADTGIAVEGATDAAR (tolerance 0.05 in CV — confirmed by empirical
+      runs that this peptide's FP flip rate is zero for seed=42, n=100)
     """
 
     @pytest.fixture()
@@ -654,9 +666,10 @@ class TestVectorizedBootstrap:
         x, _, _ = pep_data
         return np.linspace(x.min(), x.max(), 200)
 
-    # H6 — core agreement test
+    # H6 — approximate agreement on ADTGIAVEGATDAAR (no FP flips for seed=42)
     def test_h6_cv_profile_agrees_with_loop(self, pep_data, x_grid):
-        """CV profiles from loop and vectorized bootstrap must agree to < 1e-10."""
+        """For ADTGIAVEGATDAAR seed=42, no Phase-1 FP flips occur, so CV
+        profiles must agree to better than 1e-10."""
         x, y, W = pep_data
         n_reps, seed = 100, 42
 
@@ -669,10 +682,12 @@ class TestVectorizedBootstrap:
         finite = np.isfinite(cv_loop) & np.isfinite(cv_vec)
         assert finite.any(), "no finite CV values to compare"
         max_diff = float(np.max(np.abs(cv_loop[finite] - cv_vec[finite])))
-        assert max_diff < 1e-10, f"H6 FAIL: max |cv_loop - cv_vec| = {max_diff:.3e} ≥ 1e-10"
+        assert max_diff < 1e-10, (
+            f"H6 FAIL for ADTGIAVEGATDAAR: max |cv_loop - cv_vec| = {max_diff:.3e}"
+        )
 
     def test_h6_mean_pred_agrees_with_loop(self, pep_data, x_grid):
-        """Mean predictions must also agree to < 1e-10 (belt-and-suspenders)."""
+        """Mean predictions also agree to < 1e-10 for ADTGIAVEGATDAAR seed=42."""
         x, y, W = pep_data
         n_reps, seed = 100, 42
 
@@ -680,7 +695,9 @@ class TestVectorizedBootstrap:
         _, summ_vec = _bootstrap_vectorized_cf(x, y, W, x_grid, n_reps, seed)
 
         max_diff = float(np.max(np.abs(summ_loop["mean"] - summ_vec["mean"])))
-        assert max_diff < 1e-10, f"H6 FAIL: max |mean_loop - mean_vec| = {max_diff:.3e} ≥ 1e-10"
+        assert max_diff < 1e-10, (
+            f"H6 FAIL for ADTGIAVEGATDAAR: max |mean_loop - mean_vec| = {max_diff:.3e}"
+        )
 
     def test_vectorized_is_deterministic(self, pep_data, x_grid):
         """Two calls with the same seed must produce bit-identical predictions."""

@@ -35,6 +35,8 @@ def weighted_mean(
     rss : float
         Weighted residual sum of squares Σ W_i * (y_i - mean)^2.
     """
+    if len(y) == 0:
+        return np.nan, 0.0
     sum_W = float(np.sum(W))
     if sum_W == 0.0:
         return float(np.mean(y)), 0.0
