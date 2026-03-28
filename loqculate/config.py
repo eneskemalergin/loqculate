@@ -12,3 +12,4 @@ DEFAULT_SLIDING_WINDOW = 3  # consecutive points that must stay below CV thresho
 DEFAULT_CHUNK_SIZE = 100  # peptides per multiprocessing batch
 
 KNOT_SEARCH_SINGULAR_THRESHOLD = 1e-30  # min |det(G)| before falling back to weighted mean
+VECTORIZED_BOOTSTRAP_MEMORY_LIMIT_MB = 100  # max bootstrap matrix size before falling back to loop
