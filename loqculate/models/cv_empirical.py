@@ -12,8 +12,10 @@ from loqculate.utils.threshold import find_loq_threshold
 
 
 def _sliding_window_loq(
-    concs: np.ndarray, cvs: np.ndarray,
-    cv_thresh: float, window: int,
+    concs: np.ndarray,
+    cvs: np.ndarray,
+    cv_thresh: float,
+    window: int,
 ) -> float:
     """Same logic as find_loq_threshold but inlined for zero-overhead bulk use."""
     pos = concs > 0
@@ -25,10 +27,10 @@ def _sliding_window_loq(
     ew = min(window, n)
     below = cv_pos <= cv_thresh
     for i in range(n - ew + 1):
-        if below[i: i + ew].all():
+        if below[i : i + ew].all():
             return float(x_pos[i])
     remaining = n - (n - ew + 1)
-    if remaining > 0 and below[n - ew:].all():
+    if remaining > 0 and below[n - ew :].all():
         return float(x_pos[n - ew])
     return np.inf
 
@@ -38,7 +40,7 @@ class EmpiricalCV(CalibrationModel):
 
     This model has **no regression**.  It groups replicate measurements at
     each concentration level, computes CV = std/mean, and applies the same
-    sliding-window threshold search used by :class:`PiecewiseWLS`.
+    sliding-window threshold search used by :class:`PiecewiseCF` and :class:`PiecewiseWLS`.
 
     It is a reimplementation of the original ``loq_by_cv.py`` in the base-class contract.
 
@@ -188,10 +190,10 @@ class EmpiricalCV(CalibrationModel):
     def summary(self) -> dict:
         self._check_is_fitted()
         return {
-            'loq': self.loq(),
-            'cv_table': dict(self.cv_table_),
-            'mean_table': dict(self.mean_table_),
-            'n_replicates': dict(self.replicate_counts_),
+            "loq": self.loq(),
+            "cv_table": dict(self.cv_table_),
+            "mean_table": dict(self.mean_table_),
+            "n_replicates": dict(self.replicate_counts_),
         }
 
     # ------------------------------------------------------------------
@@ -252,19 +254,21 @@ class EmpiricalCV(CalibrationModel):
 
         counts = np.bincount(group_idx, minlength=n_groups).reshape(n_peps, n_concs).astype(float)
         sums = np.bincount(group_idx, weights=areas, minlength=n_groups).reshape(n_peps, n_concs)
-        sum_sq = np.bincount(group_idx, weights=areas * areas, minlength=n_groups).reshape(n_peps, n_concs)
+        sum_sq = np.bincount(group_idx, weights=areas * areas, minlength=n_groups).reshape(
+            n_peps, n_concs
+        )
 
-        with np.errstate(invalid='ignore', divide='ignore'):
+        with np.errstate(invalid="ignore", divide="ignore"):
             means = np.where(counts > 0, sums / counts, 0.0)
             var = np.where(
                 counts > 1,
-                (sum_sq / counts - means ** 2) * counts / (counts - 1.0),
+                (sum_sq / counts - means**2) * counts / (counts - 1.0),
                 0.0,
             )
         var = np.maximum(var, 0.0)
         stds = np.sqrt(var)
 
-        with np.errstate(invalid='ignore', divide='ignore'):
+        with np.errstate(invalid="ignore", divide="ignore"):
             cvs = np.where((counts >= 2) & (means != 0), stds / means, np.nan)
 
         # Step 2: For each peptide, apply sliding-window LOQ search on
@@ -275,4 +279,3 @@ class EmpiricalCV(CalibrationModel):
             results[str(unique_peps[pi])] = loq
 
         return results
-
