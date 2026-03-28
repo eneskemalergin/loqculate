@@ -2,14 +2,18 @@
 
 Usage examples
 --------------
-# PiecewiseCF (default)
+# PiecewiseCF (default since v0.3.0)
 loqculate fit data.tsv conc_map.csv
 
-# PiecewiseWLS (legacy)
+# PiecewiseWLS
 loqculate fit data.tsv conc_map.csv --model piecewise_wls
 
 # Empirical CV
 loqculate fit data.tsv conc_map.csv --model cv_empirical
+
+# v0.2.2 original implementations (compat)
+loqculate fit data.tsv conc_map.csv --model original_wls
+loqculate fit data.tsv conc_map.csv --model original_cv
 
 # Two models side-by-side
 loqculate compare data.tsv conc_map.csv --models piecewise_cf,piecewise_wls
@@ -284,10 +288,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=DEFAULT_MODEL,
         choices=list(MODEL_REGISTRY.keys()),
         help=(
-            "Calibration model. piecewise_cf (default): closed-form knot search, "
-            "globally optimal, no convergence failures. "
-            "piecewise_wls: TRF optimizer, retained for comparison. "
-            "cv_empirical: non-parametric CV profile, no LOD."
+            "Calibration model. "
+            "piecewise_cf (default): closed-form knot search, globally optimal, no convergence failures. "
+            "piecewise_wls: TRF optimizer via scipy curve_fit, identical statistical model. "
+            "cv_empirical: non-parametric CV profile, no LOD. "
+            "original_wls: v0.2.2 implementation (compat). "
+            "original_cv: v0.2.2 CV implementation (compat)."
         ),
     )
 
