@@ -4,8 +4,8 @@ from loqculate.models.piecewise_cf import PiecewiseCF
 from loqculate.models.piecewise_wls import PiecewiseWLS
 
 MODEL_REGISTRY: dict = {
-    "piecewise_wls": PiecewiseWLS,
     "piecewise_cf": PiecewiseCF,
+    "piecewise_wls": PiecewiseWLS,
     "cv_empirical": EmpiricalCV,
 }
 

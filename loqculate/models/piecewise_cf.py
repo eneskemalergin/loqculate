@@ -36,9 +36,11 @@ from loqculate.utils.weights import inverse_sqrt_weights
 class PiecewiseCF(CalibrationModel):
     """Closed-form piecewise WLS model using discrete knot search.
 
-    Same statistical model as :class:`PiecewiseWLS`: ``y = max(c, a*x + b)``
-    with precision weights ``W_i = 1/x_i``.  No optimizer, no initial-guess
-    sensitivity, fully deterministic.
+    Default model as of v0.3.0.  Implements ``y = max(c, a*x + b)`` with
+    precision weights ``W_i = 1/x_i``.  The partition boundary (knot) is
+    selected by exhaustive search over all interior unique x values, picking
+    the one that minimises total weighted RSS under the constraint set.  There
+    is no optimizer, no initial-guess sensitivity, and no convergence tolerance.
 
     Parameters
     ----------
@@ -47,13 +49,44 @@ class PiecewiseCF(CalibrationModel):
     seed:
         RNG seed forwarded to the bootstrap.
     min_noise_points:
-        Minimum observations with x < intersection required to compute LOD.
+        Minimum observations with x < LOD intersection required to compute LOD.
     min_linear_points:
-        Minimum unique concentration levels above LOD required to trust it.
+        Minimum unique concentration levels above LOD required before LOD is
+        accepted.  Prevents LOD from being placed at the top of the curve.
     sliding_window:
-        Consecutive grid points that must stay below the CV threshold.
+        Consecutive CV-grid points that must all stay below ``cv_thresh`` for
+        the LOQ to be declared at the first of those points.
     grid_points:
-        Number of bins from LOD to max(x) for the bootstrap CV grid.
+        Number of evenly spaced evaluation points from LOD to max(x) for the
+        bootstrap CV profile.
+
+    Public methods
+    --------------
+    fit(x, y, weights=None) -> PiecewiseCF
+        Fit the model.  Returns self for chaining.
+        Stores: ``params_``, ``x_``, ``y_``, ``weights_``, ``is_fitted_``.
+    predict(x_new) -> ndarray
+        Model prediction at new concentrations.
+    lod(std_mult=2) -> float
+        Limit of detection.  Returns ``np.inf`` when the curve cannot support
+        a reliable LOD (slope <= 0, too few noise points, LOD above max(x)).
+    loq(cv_thresh=0.20) -> float
+        Limit of quantitation via bootstrap CV profile.  Returns ``np.inf``
+        when LOD is infinite or the CV never drops below threshold.
+    covariance() -> ndarray or None
+        2x2 parameter covariance matrix for the linear segment (slope,
+        intercept).  Returns ``None`` when slope == 0 (degenerate fit).
+    summary() -> dict
+        Flat dict with slope, intercept_linear, intercept_noise, knot_x,
+        lod, loq, n_points.
+
+    Fitted attributes
+    -----------------
+    params_ : dict
+        Keys: ``slope``, ``intercept_linear``, ``intercept_noise``, ``knot_x``.
+    x_, y_, weights_ : ndarray
+        Training data and precision weights (``w_i``, not ``w_i^2``).
+    is_fitted_ : bool
     """
 
     def __init__(

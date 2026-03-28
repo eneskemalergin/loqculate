@@ -10,6 +10,7 @@ DEFAULT_MIN_LINEAR_POINTS = 1  # minimum calibration points above LOD
 DEFAULT_WEIGHT_CAP = 1000  # max value for WLS weight 1/sqrt(x)
 DEFAULT_SLIDING_WINDOW = 3  # consecutive points that must stay below CV threshold
 DEFAULT_CHUNK_SIZE = 100  # peptides per multiprocessing batch
+DEFAULT_MODEL = "piecewise_cf"  # default model for the fit sub-command
 
 KNOT_SEARCH_SINGULAR_THRESHOLD = 1e-30  # min |det(G)| before falling back to weighted mean
 VECTORIZED_BOOTSTRAP_MEMORY_LIMIT_MB = 100  # max bootstrap matrix size before falling back to loop
