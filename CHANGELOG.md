@@ -7,6 +7,37 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.3.0] — 2026-04-01
+
+### Added
+
+- **`PiecewiseCF` model** (`loqculate/models/piecewise_cf.py`): closed-form piecewise WLS solver using a discrete knot search. Replaces `scipy.optimize.curve_fit` (TRF) for all default-path fitting. Same statistical model as `PiecewiseWLS` ($y = \max(c, ax + b)$, weights $1/\sqrt{x}$), different solver. Zero convergence failures on the 27-peptide reference dataset; finds the globally optimal partition on 13/18 cases where it differs from TRF.
+- **`utils/normal_equations.py`**: scalar `solve_2x2_wls`, batch `solve_2x2_wls_batch`, and `weighted_mean`. Pure NumPy, no state.
+- **`utils/knot_search.py`**: `find_knot` (scalar) and `find_knot_batch` (vectorized). Searches all interior unique-concentration candidates, enforces constraints analytically ($\hat{a} \geq 0$; $\hat{c} \geq \hat{b}$), returns `KnotResult` namedtuple.
+- **`PiecewiseCF.covariance()`**: returns the 2x2 parameter covariance matrix for the linear segment, computed from the Gram matrix inverse stored during `fit()`. Storage cost is negligible; retained to support delta-method CI in v0.4.0.
+- **Vectorized bootstrap path** in `PiecewiseCF`: builds the full resample matrix upfront via `find_knot_batch`. Default path for all fits. Falls back to loop bootstrap with a `ResourceWarning` when the matrix exceeds 100 MB. Agreement with loop path: worst cv_diff = 2.0e-15 across 26 finite-LOD peptides.
+- **`config.DEFAULT_MODEL = "piecewise_cf"`**: central constant used by CLI and API.
+- **`benchmarks/bench_knot_vs_curvefit.py`** and **`benchmarks/bench_vectorized_boot.py`**: timing and correctness benchmarks for the new solver and bootstrap paths.
+- **numba** added as a runtime dependency (H9 check: INCOMPATIBLE with `@njit` as-is without refactoring; retained for future use).
+
+### Changed
+
+- **`PiecewiseCF` is the new default model.** `--model piecewise_cf` is the CLI default. All previous outputs used `PiecewiseWLS` (TRF). LOD/LOQ values will differ on the same dataset whenever the two solvers select different partition boundaries (13/27 reference peptides). The CF result is better-fitting (lower RSS) in 13 of those 18 cases. Max relative LOD deviation on same-partition peptides: 3.1e-6 (numerical only).
+- `PiecewiseWLS` is preserved. Pass `--model piecewise_wls` to restore the TRF solver path.
+- CLI `--models` compare default changed from `piecewise_wls,cv_empirical` to `piecewise_cf,piecewise_wls`.
+- `__version__` bumped from `0.2.2` to `0.3.0`.
+
+### Performance
+
+Full-pipeline speedup (vectorized CF vs WLS, n_boot=200): **15.8x**. Single-fit speedup: **2.7x median** (range 1.3-6.3x across 27 peptides). Vectorized bootstrap vs loop bootstrap: **6.8x** at 500 replicates.
+
+### Known Limitations
+
+- Numba `@njit` is not compatible with `solve_2x2_wls` without refactoring (untyped global name; TypingError in nopython mode on Numba 0.64.0). The v0.8.0 Numba path requires a rewrite.
+- LOD/LOQ values differ from v0.2.x `PiecewiseWLS` wherever the two solvers disagree on the partition boundary. This is expected behavior, not a regression. Use `--model piecewise_wls` to reproduce v0.2.x results exactly.
+
+---
+
 ## [0.2.2] — 2026-03-15
 
 ### Added

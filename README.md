@@ -4,7 +4,7 @@
   <br />
   LOD &amp; LOQ calculator for mass-spectrometry calibration curves.
   <br />
-  Current version: <strong>v0.2.2</strong> &mdash; compat layer, pre-commit hooks, and circular-import fix
+  Current version: <strong>v0.3.0</strong>. New default model: PiecewiseCF (closed-form knot search, with speedup over PiecewiseWLS).
   <br />
   <br />
   <a href="https://github.com/eneskemalergin/loqculate/actions/workflows/ci.yml"><img src="https://img.shields.io/badge/CI-passing-22c55e?style=for-the-badge" alt="CI" /></a>
@@ -16,11 +16,11 @@
 
 ---
 
-`loqculate` v0.2.x reimplements and extends the Pino 2020 LOD/LOQ scripts:
+`loqculate` v0.3.0 reimplements and extends the Pino 2020 LOD/LOQ scripts:
 
+- **Closed-form knot search** (`PiecewiseCF`): fits $y = \max(c, ax + b)$ by exhaustively searching all interior concentration values as candidate partition boundaries. No optimizer, no convergence failures, no initial-guess sensitivity. 15.8× full-pipeline speedup over `PiecewiseWLS`. Default since v0.3.0.
 - A **sliding-window LOQ rule** that reduces FDR from ~100% to <5%: LOQ is declared at $C_i$ only when $\mathrm{CV}(C_i)$, $\mathrm{CV}(C_{i+1})$, and $\mathrm{CV}(C_{i+2})$ all fall below `cv_thresh`. Three consecutive passing concentrations, not one.
 - **11.4× lower memory** per peptide vs the original scripts (VmRSS, 1 000 peptide batch). Batch throughput is 3.3× faster at 10 000 peptides due to reduced GC pressure (see [`comparison_report.ipynb`](comparison_report.ipynb))
-- **TRF solver** (`scipy.optimize.least_squares`, method='trf') with explicit convergence bounds, replacing unconstrained `curve_fit` calls
 - **EmpiricalCV** as a model-free alternative to PiecewiseWLS. Fast, but FDR is higher at low replicate counts (n < 5).
 - **`loqculate.compat`**: drop-in `OriginalWLS` and `OriginalCV` wrappers that reproduce paper results without the legacy scripts. Registered in `MODEL_REGISTRY` and usable via `--model original_wls`.
 - **Bootstrap guard** preventing infinite loops on zero-signal replicates
@@ -202,7 +202,7 @@ See [`comparison_report.ipynb`](comparison_report.ipynb) for a full frozen, 12-s
 ```bash
 pip install -e ".[dev]"
 pre-commit install      # install git hooks (runs ruff on every commit)
-pytest                 # 101 tests
+pytest                 # 165 passed, 42 skipped
 ruff check loqculate/  # lint
 ```
 
@@ -212,6 +212,8 @@ Run benchmarks (requires ~5 min, tested with 24 threads):
 python benchmarks/bench_simulation.py --save tmp/results/bench_simulation.json
 python benchmarks/bench_n_concentrations.py --n_workers 24 --save tmp/results/bench_n_concentrations.json
 python benchmarks/bench_n_replicates.py --n_workers 24 --save tmp/results/bench_n_replicates.json
+python benchmarks/bench_knot_vs_curvefit.py --save tmp/results/bench_knot_vs_curvefit.json
+python benchmarks/bench_vectorized_boot.py --save tmp/results/bench_vectorized_boot.json
 ```
 
 ---
@@ -264,7 +266,7 @@ If you use `loqculate` in your work, please cite both the original method paper 
   title     = {loqculate: Limit of Detection and Quantitation calculator
                for mass-spectrometry calibration curves},
   year      = {2026},
-  version   = {0.2.2},
+  version   = {0.3.0},
   url       = {https://github.com/eneskemalergin/loqculate},
   license   = {MIT},
 }

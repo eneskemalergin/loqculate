@@ -1,5 +1,5 @@
 # loqculate package
-__version__ = "0.2.2"
+__version__ = "0.3.0"
 
 from loqculate.compat import OriginalCV, OriginalWLS
 from loqculate.io import CalibrationData, read_calibration_data
