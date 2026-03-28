@@ -317,14 +317,12 @@ class PiecewiseCF(CalibrationModel):
         x_grid = np.linspace(lod_val, float(np.max(self.x_)), num=self.grid_points)
         W = self.weights_**2
 
-        # Use the loop path as the default: it is the reference implementation
-        # and is statistically correct.  The vectorized path (_bootstrap_vectorized_cf)
-        # uses 2-D axis-sum operations that can differ from 1-D scalar operations by
-        # 1 ULP due to SIMD/FMA arithmetic.  For nearly-tied Phase-1 candidates this
-        # may flip the winner, producing different (not just rounded) results for
-        # some peptides.  The vectorized path is kept as an explicit fast alternative
-        # only (e.g., for benchmarks).
-        _, summary = _bootstrap_loop_cf(
+        # The vectorized path is the production default.  Both paths use the
+        # same W*C full-array masking arithmetic (see _fit_and_constrain), so
+        # floating-point sums are accumulated in identical order: results are
+        # bit-exact between the two paths.  The loop path (_bootstrap_loop_cf)
+        # is kept as the memory-guard fallback and for benchmarking.
+        _, summary = _bootstrap_vectorized_cf(
             self.x_,
             self.y_,
             W,
@@ -578,7 +576,7 @@ def _bootstrap_vectorized_cf(
 
 
 # ---------------------------------------------------------------------------
-# Loop bootstrap (kept as fallback; vectorized path is default from C5)
+# Loop bootstrap (fallback for memory-guard and benchmarking)
 # ---------------------------------------------------------------------------
 
 
