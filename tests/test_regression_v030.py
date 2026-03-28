@@ -15,6 +15,7 @@ regression in the constraint enforcement or segment-fit code.
 
 from __future__ import annotations
 
+import warnings
 from pathlib import Path
 
 import numpy as np
@@ -23,6 +24,7 @@ import pytest
 from loqculate import PiecewiseCF
 from loqculate.io import read_calibration_data
 from loqculate.models import MODEL_REGISTRY, PiecewiseWLS
+from loqculate.models.piecewise_cf import _bootstrap_loop_cf, _bootstrap_vectorized_cf
 from loqculate.utils.weights import inverse_sqrt_weights
 
 # ---------------------------------------------------------------------------
@@ -621,3 +623,117 @@ class TestCovariance:
             "covariance() must return None when slope=0; "
             "the 2x2 Gram inverse does not correspond to the fitted model"
         )
+
+
+# ---------------------------------------------------------------------------
+# Test 9: vectorized bootstrap (H6) — C5
+# ---------------------------------------------------------------------------
+
+
+class TestVectorizedBootstrap:
+    """H6: vectorized bootstrap agrees with loop bootstrap to machine precision.
+
+    Both paths draw identical (x, y, W) resamples via the same SeedSequence
+    seeding, then apply identical mathematical operations.  Results must agree
+    to < 1e-10 in absolute difference on the CV profile across all finite grid
+    points.
+    """
+
+    @pytest.fixture()
+    def pep_data(self, reference_data):
+        pep = "ADTGIAVEGATDAAR"
+        mask = reference_data.peptide == pep
+        x = reference_data.concentration[mask]
+        y = reference_data.area[mask]
+        w = inverse_sqrt_weights(x)
+        W = w**2
+        return x, y, W
+
+    @pytest.fixture()
+    def x_grid(self, pep_data):
+        x, _, _ = pep_data
+        return np.linspace(x.min(), x.max(), 200)
+
+    # H6 — core agreement test
+    def test_h6_cv_profile_agrees_with_loop(self, pep_data, x_grid):
+        """CV profiles from loop and vectorized bootstrap must agree to < 1e-10."""
+        x, y, W = pep_data
+        n_reps, seed = 100, 42
+
+        _, summ_loop = _bootstrap_loop_cf(x, y, W, x_grid, n_reps, seed)
+        _, summ_vec = _bootstrap_vectorized_cf(x, y, W, x_grid, n_reps, seed)
+
+        cv_loop = summ_loop["cv"]
+        cv_vec = summ_vec["cv"]
+
+        finite = np.isfinite(cv_loop) & np.isfinite(cv_vec)
+        assert finite.any(), "no finite CV values to compare"
+        max_diff = float(np.max(np.abs(cv_loop[finite] - cv_vec[finite])))
+        assert max_diff < 1e-10, f"H6 FAIL: max |cv_loop - cv_vec| = {max_diff:.3e} ≥ 1e-10"
+
+    def test_h6_mean_pred_agrees_with_loop(self, pep_data, x_grid):
+        """Mean predictions must also agree to < 1e-10 (belt-and-suspenders)."""
+        x, y, W = pep_data
+        n_reps, seed = 100, 42
+
+        _, summ_loop = _bootstrap_loop_cf(x, y, W, x_grid, n_reps, seed)
+        _, summ_vec = _bootstrap_vectorized_cf(x, y, W, x_grid, n_reps, seed)
+
+        max_diff = float(np.max(np.abs(summ_loop["mean"] - summ_vec["mean"])))
+        assert max_diff < 1e-10, f"H6 FAIL: max |mean_loop - mean_vec| = {max_diff:.3e} ≥ 1e-10"
+
+    def test_vectorized_is_deterministic(self, pep_data, x_grid):
+        """Two calls with the same seed must produce bit-identical predictions."""
+        x, y, W = pep_data
+        pred1, _ = _bootstrap_vectorized_cf(x, y, W, x_grid, n_reps=50, seed=7)
+        pred2, _ = _bootstrap_vectorized_cf(x, y, W, x_grid, n_reps=50, seed=7)
+        np.testing.assert_array_equal(
+            pred1, pred2, err_msg="vectorized bootstrap is not deterministic"
+        )
+
+    def test_vectorized_different_seeds_differ(self, pep_data, x_grid):
+        """Different seeds must produce different replicate matrices."""
+        x, y, W = pep_data
+        pred1, _ = _bootstrap_vectorized_cf(x, y, W, x_grid, n_reps=50, seed=1)
+        pred2, _ = _bootstrap_vectorized_cf(x, y, W, x_grid, n_reps=50, seed=2)
+        assert not np.array_equal(pred1, pred2), "different seeds produced identical predictions"
+
+    def test_memory_guard_fallback(self, pep_data, x_grid, monkeypatch):
+        """When memory limit is tiny, a ResourceWarning must be emitted and
+        the call must still return a valid (non-all-inf) summary via the loop
+        fallback.
+        """
+        import loqculate.models.piecewise_cf as _mod
+
+        monkeypatch.setattr(_mod, "VECTORIZED_BOOTSTRAP_MEMORY_LIMIT_MB", 0)
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            x, y, W = pep_data
+            _, summ = _bootstrap_vectorized_cf(x, y, W, x_grid, n_reps=20, seed=42)
+
+        resource_warnings = [w for w in caught if issubclass(w.category, ResourceWarning)]
+        assert resource_warnings, "expected a ResourceWarning from the memory guard"
+
+        cv = summ["cv"]
+        assert np.any(np.isfinite(cv)), "fallback summary must contain finite CV values"
+
+    def test_lod_regression_unchanged(self, all_cf_fits):
+        """Switching the default bootstrap path must not alter LOD values.
+
+        LOD is computed analytically (no bootstrap involved), so all pinned
+        values should be reproduced to within the original tolerance.
+        """
+        lod_values = {pep: fit.lod() for pep, fit in all_cf_fits.items()}
+        for pep, expected in _PINNED_LOD.items():
+            got = lod_values[pep]
+            if expected is None:
+                assert got is None, f"{pep}: expected LOD=None, got {got}"
+            else:
+                assert got is not None, f"{pep}: expected LOD={expected}, got None"
+                if np.isinf(expected):
+                    assert np.isinf(got), f"{pep}: expected inf LOD, got {got}"
+                else:
+                    assert abs(got - expected) < 1e-4, (
+                        f"{pep}: LOD regression after C5: expected {expected}, got {got}"
+                    )
