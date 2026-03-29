@@ -5,7 +5,7 @@ These classes reproduce the exact numerical logic of:
   - ``old/loq_by_cv.py``     → :class:`OriginalCV`
 
 They satisfy the :class:`~loqculate.models.base.CalibrationModel` interface so
-they can be used anywhere PiecewiseWLS or EmpiricalCV are used, including the
+they can be used anywhere :class:`~loqculate.models.PiecewiseCF`, :class:`~loqculate.models.PiecewiseWLS`, or :class:`~loqculate.models.EmpiricalCV` are used, including the
 CLI (``loqculate fit --model original_wls``).
 
 The intent is reproducibility: users who published results with the legacy

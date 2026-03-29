@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "loqculate"
-version = "0.2.2"
+version = "0.3.0"
 description = "Limit of Detection and Quantitation calculator for mass-spectrometry calibration curves"
 readme = "README.md"
 license = { text = "MIT" }
@@ -28,6 +28,7 @@ dependencies = [
     "matplotlib>=3.7",
     "tqdm>=4.64",
     "lmfit>=1.2",
+    "numba>=0.64.0",
 ]
 
 [project.optional-dependencies]
@@ -63,6 +64,9 @@ target-version = "py310"
 [tool.ruff.lint]
 select = ["E", "F", "W", "I"]
 ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+"benchmarks/*.py" = ["E402"]
 
 [tool.coverage.run]
 source = ["loqculate"]

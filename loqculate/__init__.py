@@ -1,9 +1,9 @@
 # loqculate package
-__version__ = "0.2.2"
+__version__ = "0.3.0"
 
 from loqculate.compat import OriginalCV, OriginalWLS
 from loqculate.io import CalibrationData, read_calibration_data
-from loqculate.models import MODEL_REGISTRY, EmpiricalCV, PiecewiseWLS
+from loqculate.models import MODEL_REGISTRY, EmpiricalCV, PiecewiseCF, PiecewiseWLS
 
 # Register compat models here — after both loqculate.models and loqculate.compat
 # are fully initialised — to avoid the circular import that arises when
@@ -14,6 +14,7 @@ MODEL_REGISTRY["original_cv"] = OriginalCV
 __all__ = [
     "__version__",
     "PiecewiseWLS",
+    "PiecewiseCF",
     "EmpiricalCV",
     "OriginalWLS",
     "OriginalCV",
