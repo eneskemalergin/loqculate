@@ -16,6 +16,7 @@ import numpy as np
 from loqculate.config import (
     DEFAULT_BOOT_REPS,
     DEFAULT_CV_THRESH,
+    DEFAULT_DELTA_GRID_POINTS,
     DEFAULT_LOQ_GRID_POINTS,
     DEFAULT_MIN_LINEAR_POINTS,
     DEFAULT_MIN_NOISE_POINTS,
@@ -24,6 +25,7 @@ from loqculate.config import (
     VECTORIZED_BOOTSTRAP_MEMORY_LIMIT_MB,
 )
 from loqculate.models.base import CalibrationModel
+from loqculate.models.delta_method import delta_loq as compute_delta_loq
 from loqculate.utils.knot_search import _fit_and_constrain, find_knot
 from loqculate.utils.threshold import find_loq_threshold
 from loqculate.utils.weights import inverse_sqrt_weights
@@ -70,9 +72,13 @@ class PiecewiseCF(CalibrationModel):
     lod(std_mult=2) -> float
         Limit of detection.  Returns ``np.inf`` when the curve cannot support
         a reliable LOD (slope <= 0, too few noise points, LOD above max(x)).
-    loq(cv_thresh=0.20) -> float
-        Limit of quantitation via bootstrap CV profile.  Returns ``np.inf``
+    loq(cv_thresh=0.20, method="bootstrap") -> float
+        Limit of quantitation.  Default ``method="bootstrap"`` uses the
+        bootstrap CV profile.  ``method="delta"`` uses the analytical
+        delta-method path (same as :meth:`loq_delta`).  Returns ``np.inf``
         when LOD is infinite or the CV never drops below threshold.
+    loq_delta(cv_thresh=0.20, n_grid=1000) -> float
+        Analytical LOQ from prediction-variance CV.  Does not run bootstrap.
     covariance() -> ndarray or None
         2x2 parameter covariance matrix for the linear segment (slope,
         intercept).  Returns ``None`` when slope == 0 (degenerate fit).
@@ -233,22 +239,68 @@ class PiecewiseCF(CalibrationModel):
     # loq
     # ------------------------------------------------------------------
 
-    def loq(self, cv_thresh: float = DEFAULT_CV_THRESH) -> float:
-        """Limit of quantitation via bootstrap CV + sliding-window search."""
+    def loq_delta(
+        self,
+        cv_thresh: float = DEFAULT_CV_THRESH,
+        n_grid: int = DEFAULT_DELTA_GRID_POINTS,
+    ) -> float:
+        """Return analytical LOQ from the delta-method CV profile.
+
+        Does not run bootstrap and does not fall back to bootstrap when the
+        result is infinite.
+        """
+        self._check_is_fitted()
+        return compute_delta_loq(
+            self,
+            cv_thresh=cv_thresh,
+            n_grid=n_grid,
+            window=self.sliding_window,
+        )
+
+    def loq(
+        self,
+        cv_thresh: float = DEFAULT_CV_THRESH,
+        method: str = "bootstrap",
+    ) -> float:
+        """Limit of quantitation via bootstrap or delta-method CV search.
+
+        Parameters
+        ----------
+        cv_thresh:
+            CV threshold for the sliding-window LOQ rule.
+        method:
+            ``"bootstrap"`` (default) or ``"delta"``.  ``"delta"`` routes to
+            :meth:`loq_delta` with no bootstrap fallback.
+
+        Raises
+        ------
+        ValueError
+            If ``method`` is not ``"bootstrap"`` or ``"delta"``.
+        """
         self._check_is_fitted()
 
-        if cv_thresh in self._loq_cache:
-            return self._loq_cache[cv_thresh]
+        method_key = str(method).lower()
+        if method_key not in ("bootstrap", "delta"):
+            raise ValueError(f"loq method must be 'bootstrap' or 'delta', got {method!r}.")
+
+        cache_key = (method_key, float(cv_thresh))
+        if cache_key in self._loq_cache:
+            return self._loq_cache[cache_key]
+
+        if method_key == "delta":
+            loq_val = self.loq_delta(cv_thresh=cv_thresh)
+            self._loq_cache[cache_key] = loq_val
+            return loq_val
 
         lod_val = self.lod()
         if not np.isfinite(lod_val):
-            self._loq_cache[cv_thresh] = np.inf
+            self._loq_cache[cache_key] = np.inf
             return np.inf
 
         self._ensure_boot_summary(lod_val)
 
         if self._x_grid is None or self._boot_summary is None:
-            self._loq_cache[cv_thresh] = np.inf
+            self._loq_cache[cache_key] = np.inf
             return np.inf
 
         loq_val = find_loq_threshold(
@@ -261,7 +313,7 @@ class PiecewiseCF(CalibrationModel):
         if not np.isfinite(loq_val) or loq_val >= np.max(self.x_) or loq_val <= 0:
             loq_val = np.inf
 
-        self._loq_cache[cv_thresh] = loq_val
+        self._loq_cache[cache_key] = loq_val
         return loq_val
 
     # ------------------------------------------------------------------

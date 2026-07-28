@@ -147,3 +147,77 @@ def test_delta_loq_uses_find_loq_threshold_non_strict() -> None:
     got = delta_loq(cf, cv_thresh=0.2, n_grid=200)
     assert np.isfinite(expected), "pre-condition: test curve must yield a finite LOQ"
     np.testing.assert_allclose(got, expected, rtol=0.0, atol=0.0)
+
+
+def test_loq_delta_twice_identical() -> None:
+    """Two loq_delta() calls on the same fit return identical floats (no seed)."""
+    cf = _fit_piecewise_curve(noise_sd=0.5, seed=2)
+    a = cf.loq_delta()
+    b = cf.loq_delta()
+    assert np.isfinite(a), "pre-condition: synthetic curve must yield finite delta LOQ"
+    assert a == b
+
+
+def test_loq_method_delta_matches_loq_delta() -> None:
+    """loq(method='delta') equals loq_delta() on the same fit."""
+    cf = _fit_piecewise_curve(noise_sd=0.5, seed=2)
+    via_method = cf.loq(method="delta")
+    via_helper = cf.loq_delta()
+    assert np.isfinite(via_method), "pre-condition: synthetic curve must yield finite delta LOQ"
+    assert via_method == via_helper
+
+
+def test_loq_delta_does_not_run_bootstrap() -> None:
+    """Delta path leaves bootstrap state untouched."""
+    cf = _fit_piecewise_curve(noise_sd=0.5, seed=2)
+
+    cf.loq_delta()
+    assert cf._boot_summary is None
+    assert cf._x_grid is None
+
+    cf.loq(method="delta")
+    assert cf._boot_summary is None
+    assert cf._x_grid is None
+
+
+def test_loq_cache_isolates_bootstrap_and_delta() -> None:
+    """Bootstrap and delta LOQ cache entries do not overwrite each other."""
+    cf = _fit_piecewise_curve(noise_sd=0.5, seed=2)
+    delta = cf.loq(method="delta")
+    boot = cf.loq()  # n_boot_reps=0 -> inf
+
+    assert np.isfinite(delta), "pre-condition: synthetic curve must yield finite delta LOQ"
+    assert np.isinf(boot)
+    assert ("delta", 0.2) in cf._loq_cache
+    assert ("bootstrap", 0.2) in cf._loq_cache
+    assert cf._loq_cache[("delta", 0.2)] == delta
+    assert cf._loq_cache[("bootstrap", 0.2)] == boot
+    assert cf.loq(method="delta") == delta
+    assert cf.loq() == boot
+
+    # Reverse order on a fresh fit: bootstrap first must not poison delta.
+    cf2 = _fit_piecewise_curve(noise_sd=0.5, seed=2)
+    boot2 = cf2.loq()
+    delta2 = cf2.loq(method="delta")
+    assert np.isinf(boot2)
+    assert delta2 == delta
+    assert cf2.loq() == boot2
+
+
+def test_summary_loq_stays_bootstrap() -> None:
+    """summary()['loq'] uses default bootstrap loq(), not loq_delta()."""
+    cf = _fit_piecewise_curve(noise_sd=0.5, seed=2)
+    delta = cf.loq_delta()
+    assert np.isfinite(delta), "pre-condition: synthetic curve must yield finite delta LOQ"
+
+    summary_loq = cf.summary()["loq"]
+    assert summary_loq == cf.loq()
+    assert np.isinf(summary_loq)
+    assert summary_loq != delta
+
+
+def test_loq_unknown_method_raises() -> None:
+    """Unknown loq method raises ValueError."""
+    cf = _fit_piecewise_curve()
+    with pytest.raises(ValueError, match="bootstrap.*delta"):
+        cf.loq(method="jackknife")
