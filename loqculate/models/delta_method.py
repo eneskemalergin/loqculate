@@ -129,17 +129,18 @@ def delta_cv_profile(
     spacing = min_concentration_spacing(host.x_)
     half_band = kink_guard_factor * spacing
 
-    cv = np.empty_like(x_grid)
-    for i, x0 in enumerate(x_grid):
-        if np.isfinite(x_star) and abs(float(x0) - x_star) < half_band:
-            cv[i] = np.inf
-            continue
-        y0 = float(y_hat[i])
-        if y0 == 0.0 or not np.isfinite(y0):
-            cv[i] = np.inf
-            continue
-        var = prediction_variance(float(x0), mse, cov)
-        cv[i] = np.sqrt(var) / y0
+    # Vectorized form of prediction_variance over the grid (same W0 and x'Σx).
+    w0 = inverse_sqrt_weights(x_grid)
+    W0 = w0**2
+    cov = np.asarray(cov, dtype=float)
+    quad = cov[0, 0] * x_grid**2 + 2.0 * cov[0, 1] * x_grid + cov[1, 1]
+    var = np.maximum(float(mse) / W0 + quad, 0.0)
+
+    cv = np.full(x_grid.shape, np.inf, dtype=float)
+    usable = np.isfinite(y_hat) & (y_hat != 0.0)
+    if np.isfinite(x_star):
+        usable &= np.abs(x_grid - x_star) >= half_band
+    cv[usable] = np.sqrt(var[usable]) / y_hat[usable]
 
     return x_grid, cv
 

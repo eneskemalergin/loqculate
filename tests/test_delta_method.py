@@ -315,3 +315,40 @@ def test_prediction_variance_clamps_negative() -> None:
     """Negative raw prediction variance is clamped to zero before sqrt."""
     cov = np.array([[-10.0, 0.0], [0.0, -10.0]])
     assert prediction_variance(1.0, mse=0.0, cov=cov) == 0.0
+
+
+def test_cv_profile_matches_scalar_prediction_variance() -> None:
+    """Grid CV away from the kink matches scalar prediction_variance / y_hat."""
+    cf = _fit_piecewise_curve(noise_sd=0.5, seed=2)
+    x_grid, cv = delta_cv_profile(cf, n_grid=200)
+    assert x_grid.size > 0
+
+    mse = linear_segment_mse(cf)
+    cov = cf.covariance()
+    assert mse is not None and cov is not None
+    y_hat = np.asarray(cf.predict(x_grid), dtype=float)
+    x_star = kink_concentration(cf)
+    half_band = DEFAULT_KINK_GUARD_FACTOR * min_concentration_spacing(cf.x_)
+
+    for i, x0 in enumerate(x_grid):
+        if np.isfinite(x_star) and abs(float(x0) - x_star) < half_band:
+            assert np.isinf(cv[i])
+            continue
+        y0 = float(y_hat[i])
+        if y0 == 0.0 or not np.isfinite(y0):
+            assert np.isinf(cv[i])
+            continue
+        expected = np.sqrt(prediction_variance(float(x0), mse, cov)) / y0
+        np.testing.assert_allclose(cv[i], expected, rtol=1e-12, atol=0.0)
+
+
+def test_cv_profile_does_not_call_scalar_prediction_variance() -> None:
+    """delta_cv_profile must not call prediction_variance once per grid point."""
+    cf = _fit_piecewise_curve(noise_sd=0.5, seed=2)
+    with patch(
+        "loqculate.models.delta_method.prediction_variance",
+        side_effect=AssertionError("scalar prediction_variance called from CV grid"),
+    ):
+        x_grid, cv = delta_cv_profile(cf, n_grid=100)
+    assert x_grid.size > 0
+    assert np.any(np.isfinite(cv))
