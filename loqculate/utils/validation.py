@@ -8,9 +8,9 @@ import pandas as pd
 def require_numpy_arrays(*arrays, names=None):
     """Raise TypeError if any argument is not a numpy ndarray."""
     for i, arr in enumerate(arrays):
-        label = names[i] if names else f'arg[{i}]'
+        label = names[i] if names else f"arg[{i}]"
         if not isinstance(arr, np.ndarray):
-            raise TypeError(f'{label} must be a numpy ndarray, got {type(arr).__name__}')
+            raise TypeError(f"{label} must be a numpy ndarray, got {type(arr).__name__}")
 
 
 def validate_concentration_map(conc_map_path: str) -> Optional[pd.DataFrame]:
@@ -24,23 +24,23 @@ def validate_concentration_map(conc_map_path: str) -> Optional[pd.DataFrame]:
     except Exception:
         return None
 
-    if df.empty or 'concentration' not in df.columns:
+    if df.empty or "concentration" not in df.columns:
         sys.stderr.write(
-            'WARNING: the concentration map appears to be blank or is missing '
+            "WARNING: the concentration map appears to be blank or is missing "
             'a "concentration" column. No curve points will be mapped.\n'
         )
         return df
 
-    blank = df['concentration'].isna() | (df['concentration'].astype(str).str.strip() == '')
+    blank = df["concentration"].isna() | (df["concentration"].astype(str).str.strip() == "")
     n_blank = int(blank.sum())
     if n_blank:
         sys.stderr.write(
-            f'WARNING: {n_blank} row(s) in the concentration map have a '
-            f'blank/unannotated concentration value and will be skipped:\n'
+            f"WARNING: {n_blank} row(s) in the concentration map have a "
+            f"blank/unannotated concentration value and will be skipped:\n"
         )
-        fname_col = 'filename' if 'filename' in df.columns else df.columns[0]
+        fname_col = "filename" if "filename" in df.columns else df.columns[0]
         for fname in df.loc[blank, fname_col].tolist():
-            sys.stderr.write(f'  {fname}\n')
+            sys.stderr.write(f"  {fname}\n")
 
     return df
 

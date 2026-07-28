@@ -1,4 +1,5 @@
 """Named edge-case presets for :class:`~loqculate.testing.simulator.CurveSimulator`."""
+
 from __future__ import annotations
 
 import numpy as np
@@ -11,6 +12,7 @@ _SPARSE_CONCS = [0.0, 1.0, 10.0, 100.0]  # only 4 levels
 
 class _AllZeroSimulator(CurveSimulator):
     """Override generate() so every area is exactly 0.0."""
+
     def generate(self) -> SimulatedDataset:
         ds = super().generate()
         return SimulatedDataset(
@@ -23,6 +25,7 @@ class _AllZeroSimulator(CurveSimulator):
 
 class _HighCVBounceSimulator(CurveSimulator):
     """Inject a high-CV spike at mid-range to stress-test the sliding window."""
+
     def generate(self) -> SimulatedDataset:
         ds = super().generate()
         rng = np.random.default_rng(self.seed + 999)
@@ -44,7 +47,7 @@ class _HighCVBounceSimulator(CurveSimulator):
 
 SCENARIOS: dict[str, CurveSimulator] = {
     # Happy path — clear LOD, clear LOQ
-    'ideal_curve': CurveSimulator(
+    "ideal_curve": CurveSimulator(
         slope=5000.0,
         intercept_linear=200.0,
         intercept_noise=500.0,
@@ -55,7 +58,7 @@ SCENARIOS: dict[str, CurveSimulator] = {
         seed=42,
     ),
     # All areas exactly zero → no bootstrap variance → must not hang
-    'all_zero': _AllZeroSimulator(
+    "all_zero": _AllZeroSimulator(
         slope=0.0,
         intercept_linear=0.0,
         intercept_noise=0.0,
@@ -66,7 +69,7 @@ SCENARIOS: dict[str, CurveSimulator] = {
         seed=0,
     ),
     # No signal at any concentration (slope = 0)
-    'all_noise': CurveSimulator(
+    "all_noise": CurveSimulator(
         slope=0.0,
         intercept_linear=500.0,
         intercept_noise=500.0,
@@ -77,7 +80,7 @@ SCENARIOS: dict[str, CurveSimulator] = {
         seed=1,
     ),
     # Non-monotonic CV with a spike at mid-range → sliding window must catch it
-    'high_cv_bounce': _HighCVBounceSimulator(
+    "high_cv_bounce": _HighCVBounceSimulator(
         slope=5000.0,
         intercept_linear=200.0,
         intercept_noise=500.0,
@@ -88,7 +91,7 @@ SCENARIOS: dict[str, CurveSimulator] = {
         seed=2,
     ),
     # Only 4 concentration levels — test min-points validation
-    'sparse_curve': CurveSimulator(
+    "sparse_curve": CurveSimulator(
         slope=5000.0,
         intercept_linear=200.0,
         intercept_noise=500.0,
@@ -99,7 +102,7 @@ SCENARIOS: dict[str, CurveSimulator] = {
         seed=3,
     ),
     # n_replicates=1 — EmpiricalCV should warn and CV will be NaN
-    'single_replicate': CurveSimulator(
+    "single_replicate": CurveSimulator(
         slope=5000.0,
         intercept_linear=200.0,
         intercept_noise=500.0,
@@ -110,7 +113,7 @@ SCENARIOS: dict[str, CurveSimulator] = {
         seed=4,
     ),
     # Blank (conc=0) has very low CV — LOQ must NOT be 0
-    'blank_only_low_cv': CurveSimulator(
+    "blank_only_low_cv": CurveSimulator(
         slope=5000.0,
         intercept_linear=200.0,
         intercept_noise=500.0,
@@ -121,7 +124,7 @@ SCENARIOS: dict[str, CurveSimulator] = {
         seed=5,
     ),
     # Five orders of magnitude in x — weight numerical stability
-    'wide_dynamic_range': CurveSimulator(
+    "wide_dynamic_range": CurveSimulator(
         slope=5000.0,
         intercept_linear=200.0,
         intercept_noise=500.0,
@@ -144,7 +147,5 @@ def get_scenario(name: str) -> CurveSimulator:
     ``wide_dynamic_range``.
     """
     if name not in SCENARIOS:
-        raise KeyError(
-            f"Unknown scenario '{name}'. Available: {list(SCENARIOS.keys())}"
-        )
+        raise KeyError(f"Unknown scenario '{name}'. Available: {list(SCENARIOS.keys())}")
     return SCENARIOS[name]

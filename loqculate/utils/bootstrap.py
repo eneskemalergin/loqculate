@@ -55,11 +55,11 @@ def bootstrap_predictions(
     if np.unique(y).size <= 1:
         const = float(y[0]) if len(y) else np.nan
         summary = {
-            'mean': np.full(n_grid, const),
-            'std': np.zeros(n_grid),
-            'cv': np.full(n_grid, np.inf),
-            'pct_5': np.full(n_grid, const),
-            'pct_95': np.full(n_grid, const),
+            "mean": np.full(n_grid, const),
+            "std": np.zeros(n_grid),
+            "cv": np.full(n_grid, np.inf),
+            "pct_5": np.full(n_grid, const),
+            "pct_95": np.full(n_grid, const),
         }
         return nan_predictions, summary
 
@@ -85,16 +85,16 @@ def bootstrap_predictions(
             model.fit(x[idx], y[idx])
             predictions[i] = model.predict(x_grid)
 
-    with np.errstate(invalid='ignore'):
+    with np.errstate(invalid="ignore"):
         mean_pred = np.nanmean(predictions, axis=0)
         std_pred = np.nanstd(predictions, axis=0, ddof=1)
         cv_pred = np.where(mean_pred != 0, std_pred / mean_pred, np.inf)
 
     summary = {
-        'mean': mean_pred,
-        'std': std_pred,
-        'cv': cv_pred,
-        'pct_5': np.nanpercentile(predictions, 5, axis=0),
-        'pct_95': np.nanpercentile(predictions, 95, axis=0),
+        "mean": mean_pred,
+        "std": std_pred,
+        "cv": cv_pred,
+        "pct_5": np.nanpercentile(predictions, 5, axis=0),
+        "pct_95": np.nanpercentile(predictions, 95, axis=0),
     }
     return predictions, summary

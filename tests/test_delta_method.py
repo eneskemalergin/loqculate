@@ -314,6 +314,20 @@ def test_infinite_lod_returns_inf_delta_loq() -> None:
     assert np.isinf(delta_loq(cf))
 
 
+def test_lod_at_or_above_xmax_returns_empty_profile() -> None:
+    """LOD at or above max(x) yields an empty CV profile (no fabricated grid)."""
+    cf = _fit_piecewise_curve(noise_sd=0.5, seed=2)
+    x_max = float(np.max(cf.x_))
+
+    x_grid, cv = delta_cv_profile(cf, n_grid=50, lod=x_max)
+    assert x_grid.size == 0
+    assert cv.size == 0
+
+    x_grid2, cv2 = delta_cv_profile(cf, n_grid=50, lod=x_max + 1.0)
+    assert x_grid2.size == 0
+    assert cv2.size == 0
+
+
 def test_zero_prediction_sets_cv_inf() -> None:
     """Zero predicted signal sets CV to inf without divide-by-zero."""
     cf = _fit_piecewise_curve(noise_sd=0.5, seed=2)

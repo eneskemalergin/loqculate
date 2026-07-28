@@ -4,21 +4,22 @@ Each test targets one named scenario from ``loqculate.testing.scenarios``.
 The parametrised ``edge_case`` fixture in conftest.py supplies all scenarios;
 each test skips irrelevant ones so the intent stays focused.
 """
+
 import numpy as np
 import pytest
 
-from loqculate.models import PiecewiseWLS, EmpiricalCV
-
+from loqculate.models import EmpiricalCV, PiecewiseWLS
 
 # ---------------------------------------------------------------------------
 # PiecewiseWLS edge cases
 # ---------------------------------------------------------------------------
 
+
 def test_all_zero_does_not_hang(edge_case):
     """All-zero areas must not hang and must return LOD = inf."""
     name, dataset = edge_case
-    if name != 'all_zero':
-        pytest.skip()
+    if name != "all_zero":
+        pytest.skip(f"scenario under test is all_zero, got {name}")
     pep = dataset.peptide[0]
     mask = dataset.peptide == pep
     x = dataset.concentration[mask]
@@ -32,8 +33,8 @@ def test_all_zero_does_not_hang(edge_case):
 def test_all_noise_lod_inf(edge_case):
     """No linear signal (slope=0) → LOD must be inf."""
     name, dataset = edge_case
-    if name != 'all_noise':
-        pytest.skip()
+    if name != "all_noise":
+        pytest.skip(f"scenario under test is all_zero, got {name}")
     pep = dataset.peptide[0]
     mask = dataset.peptide == pep
     x = dataset.concentration[mask]
@@ -48,8 +49,8 @@ def test_high_cv_bounce_loq_not_first_crossing(edge_case):
     """Sliding window must not return the first CV-below-threshold point
     when the CV bounces back above threshold immediately after."""
     name, dataset = edge_case
-    if name != 'high_cv_bounce':
-        pytest.skip()
+    if name != "high_cv_bounce":
+        pytest.skip(f"scenario under test is all_zero, got {name}")
     pep = dataset.peptide[0]
     mask = dataset.peptide == pep
     x = dataset.concentration[mask]
@@ -65,8 +66,8 @@ def test_high_cv_bounce_loq_not_first_crossing(edge_case):
 def test_sparse_curve_does_not_crash(edge_case):
     """4-concentration sparse grid must not crash (just may return inf)."""
     name, dataset = edge_case
-    if name != 'sparse_curve':
-        pytest.skip()
+    if name != "sparse_curve":
+        pytest.skip(f"scenario under test is all_zero, got {name}")
     pep = dataset.peptide[0]
     mask = dataset.peptide == pep
     x = dataset.concentration[mask]
@@ -82,8 +83,8 @@ def test_sparse_curve_does_not_crash(edge_case):
 def test_wide_dynamic_range_does_not_crash(edge_case):
     """Five orders of magnitude in x → weight clipping must not destabilise fit."""
     name, dataset = edge_case
-    if name != 'wide_dynamic_range':
-        pytest.skip()
+    if name != "wide_dynamic_range":
+        pytest.skip(f"scenario under test is all_zero, got {name}")
     pep = dataset.peptide[0]
     mask = dataset.peptide == pep
     x = dataset.concentration[mask]
@@ -98,25 +99,26 @@ def test_wide_dynamic_range_does_not_crash(edge_case):
 # EmpiricalCV edge cases
 # ---------------------------------------------------------------------------
 
+
 def test_single_replicate_rejects_empirical_cv(edge_case):
     """n=1 per concentration → CV is mathematically undefined → ValueError."""
     name, dataset = edge_case
-    if name != 'single_replicate':
-        pytest.skip()
+    if name != "single_replicate":
+        pytest.skip(f"scenario under test is all_zero, got {name}")
     pep = dataset.peptide[0]
     mask = dataset.peptide == pep
     x = dataset.concentration[mask]
     y = dataset.area[mask]
 
-    with pytest.raises(ValueError, match='replicate'):
+    with pytest.raises(ValueError, match="replicate"):
         EmpiricalCV().fit(x, y)
 
 
 def test_blank_only_low_cv_loq_positive(edge_case):
     """LOQ must be > 0 even when blank concentration has very low CV."""
     name, dataset = edge_case
-    if name != 'blank_only_low_cv':
-        pytest.skip()
+    if name != "blank_only_low_cv":
+        pytest.skip(f"scenario under test is all_zero, got {name}")
     pep = dataset.peptide[0]
     mask = dataset.peptide == pep
     x = dataset.concentration[mask]
