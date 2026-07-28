@@ -5,6 +5,9 @@ Usage examples
 # PiecewiseCF (default since v0.3.0)
 loqculate fit data.tsv conc_map.csv
 
+# Analytical delta-method LOQ with bootstrap fallback when infinite
+loqculate fit data.tsv conc_map.csv --fast
+
 # PiecewiseWLS
 loqculate fit data.tsv conc_map.csv --model piecewise_wls
 
@@ -58,8 +61,12 @@ def _process_chunk(
     model_kwargs: dict,
     std_mult: float,
     cv_thresh: float,
+    fast: bool = False,
 ) -> list[dict]:
     """Process a chunk of peptides and return a list of result dicts."""
+    if fast and model_name != "piecewise_cf":
+        raise ValueError(f"--fast requires model 'piecewise_cf' (got {model_name!r}).")
+
     model_class = MODEL_REGISTRY[model_name]
     results = []
 
@@ -73,7 +80,7 @@ def _process_chunk(
             model = model_class(**model_kwargs)
             model.fit(x, y)
             row["LOD"] = model.lod(std_mult) if model.supports_lod() else np.inf
-            row["LOQ"] = model.loq(cv_thresh)
+            row["LOQ"] = _loq_for_cli(model, cv_thresh=cv_thresh, fast=fast)
             row.update(model.params_)
         except Exception as exc:
             sys.stderr.write(f"ERROR processing {pep}: {exc}\n")
@@ -83,12 +90,34 @@ def _process_chunk(
     return results
 
 
+def _loq_for_cli(model: object, *, cv_thresh: float, fast: bool) -> float:
+    """Return LOQ for CLI output.
+
+    With ``fast``, use analytical delta-method LOQ and fall back to bootstrap
+    once when that value is infinite.  Without ``fast``, use default bootstrap
+    ``loq()``.
+    """
+    if not fast:
+        return float(model.loq(cv_thresh))
+
+    loq_val = float(model.loq(cv_thresh, method="delta"))
+    if np.isfinite(loq_val):
+        return loq_val
+    return float(model.loq(cv_thresh, method="bootstrap"))
+
+
 # ---------------------------------------------------------------------------
 # fit sub-command
 # ---------------------------------------------------------------------------
 
 
 def _run_fit(args: argparse.Namespace) -> None:
+    if args.fast and args.model != "piecewise_cf":
+        sys.exit(
+            f"--fast requires --model piecewise_cf (got {args.model!r}). "
+            "Other models do not support analytical delta-method LOQ."
+        )
+
     data = read_calibration_data(args.curve_data, args.filename_concentration_map, fmt=args.format)
 
     if args.multiplier_file:
@@ -138,6 +167,7 @@ def _run_fit(args: argparse.Namespace) -> None:
                     model_kwargs,
                     args.std_mult,
                     args.cv_thresh,
+                    args.fast,
                 )
                 for chunk in chunk_list
             ]
@@ -294,6 +324,15 @@ def build_parser() -> argparse.ArgumentParser:
             "cv_empirical: non-parametric CV profile, no LOD. "
             "original_wls: v0.2.2 implementation (compat). "
             "original_cv: v0.2.2 CV implementation (compat)."
+        ),
+    )
+    p_fit.add_argument(
+        "--fast",
+        action="store_true",
+        help=(
+            "For piecewise_cf only: compute analytical delta-method LOQ first; "
+            "if that LOQ is infinite, fall back to bootstrap once. "
+            "Refused for other models."
         ),
     )
 
