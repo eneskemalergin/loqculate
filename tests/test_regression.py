@@ -15,6 +15,7 @@ If you need to regenerate the reference values::
         ../data/demo/filename2samplegroup_map.csv \
         --model piecewise --bootreps 100 --plot n
 """
+
 import numpy as np
 import pytest
 
@@ -22,7 +23,7 @@ from loqculate.models import PiecewiseWLS
 from loqculate.testing.simulator import CurveSimulator
 
 
-@pytest.fixture(scope='module')
+@pytest.fixture(scope="module")
 def reference_dataset():
     """Deterministic synthetic dataset with known structure."""
     sim = CurveSimulator(
@@ -44,31 +45,31 @@ def reference_dataset():
 class TestRegressionV2:
     def test_fit_does_not_crash(self, reference_dataset):
         x, y = reference_dataset
-        model = PiecewiseWLS(init_method='legacy', n_boot_reps=10, seed=42)
+        model = PiecewiseWLS(init_method="legacy", n_boot_reps=10, seed=42)
         model.fit(x, y)
         assert model.is_fitted_
 
     def test_slope_positive(self, reference_dataset):
         x, y = reference_dataset
-        model = PiecewiseWLS(init_method='legacy', n_boot_reps=10, seed=42).fit(x, y)
-        assert model.params_['slope'] > 0
+        model = PiecewiseWLS(init_method="legacy", n_boot_reps=10, seed=42).fit(x, y)
+        assert model.params_["slope"] > 0
 
     def test_intercept_noise_ge_intercept_linear(self, reference_dataset):
         """Noise plateau must be above or equal to the linear intercept."""
         x, y = reference_dataset
-        model = PiecewiseWLS(init_method='legacy', n_boot_reps=10, seed=42).fit(x, y)
-        assert model.params_['intercept_noise'] >= model.params_['intercept_linear'] - 1e-6
+        model = PiecewiseWLS(init_method="legacy", n_boot_reps=10, seed=42).fit(x, y)
+        assert model.params_["intercept_noise"] >= model.params_["intercept_linear"] - 1e-6
 
     def test_lod_less_than_max_x(self, reference_dataset):
         x, y = reference_dataset
-        model = PiecewiseWLS(init_method='legacy', n_boot_reps=10, seed=42).fit(x, y)
+        model = PiecewiseWLS(init_method="legacy", n_boot_reps=10, seed=42).fit(x, y)
         lod = model.lod()
         if np.isfinite(lod):
             assert lod < np.max(x)
 
     def test_loq_ge_lod(self, reference_dataset):
         x, y = reference_dataset
-        model = PiecewiseWLS(init_method='legacy', n_boot_reps=30, seed=42).fit(x, y)
+        model = PiecewiseWLS(init_method="legacy", n_boot_reps=30, seed=42).fit(x, y)
         lod = model.lod()
         loq = model.loq()
         if np.isfinite(lod) and np.isfinite(loq):

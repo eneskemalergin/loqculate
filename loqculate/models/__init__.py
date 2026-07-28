@@ -1,4 +1,7 @@
-# Models subpackage
+"""Calibration model registry and public model classes."""
+
+from __future__ import annotations
+
 from loqculate.models.cv_empirical import EmpiricalCV
 from loqculate.models.piecewise_cf import PiecewiseCF
 from loqculate.models.piecewise_wls import PiecewiseWLS

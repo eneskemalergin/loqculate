@@ -6,6 +6,7 @@ Reproduces the exact Pino 2020 empirical-CV logic:
   - No LOD support
   - No sliding window
 """
+
 from __future__ import annotations
 
 from typing import Dict, Optional
@@ -53,7 +54,7 @@ class OriginalCV(CalibrationModel):
         x: np.ndarray,
         y: np.ndarray,
         weights: Optional[np.ndarray] = None,
-    ) -> 'OriginalCV':
+    ) -> "OriginalCV":
         x = np.asarray(x, dtype=float)
         y = np.asarray(y, dtype=float)
 
@@ -88,7 +89,7 @@ class OriginalCV(CalibrationModel):
 
     def predict(self, x_new: np.ndarray) -> np.ndarray:
         """Not applicable for OriginalCV (no regression model)."""
-        raise NotImplementedError('OriginalCV has no regression model; predict() is not supported.')
+        raise NotImplementedError("OriginalCV has no regression model; predict() is not supported.")
 
     # ------------------------------------------------------------------
     # lod / loq
@@ -113,9 +114,9 @@ class OriginalCV(CalibrationModel):
     def summary(self) -> dict:
         self._check_is_fitted()
         return {
-            'lod': np.inf,
-            'loq': self._loq_val,
-            'n_points': len(self.x_),
-            'n_concentrations': len(self.cv_table_),
-            'compat_model': 'OriginalCV',
+            "lod": np.inf,
+            "loq": self._loq_val,
+            "n_points": len(self.x_),
+            "n_concentrations": len(self.cv_table_),
+            "compat_model": "OriginalCV",
         }

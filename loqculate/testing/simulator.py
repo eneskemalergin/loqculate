@@ -1,4 +1,5 @@
 """Minimal synthetic signal generator for structural testing."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -10,10 +11,10 @@ import numpy as np
 class SimulatedDataset(NamedTuple):
     """Output of :meth:`CurveSimulator.generate`."""
 
-    peptide: np.ndarray     # shape (n_peptides * n_concentrations * n_replicates,)
+    peptide: np.ndarray  # shape (n_peptides * n_concentrations * n_replicates,)
     concentration: np.ndarray
     area: np.ndarray
-    ground_truth: dict      # {'slope', 'intercept_linear', 'intercept_noise', 'cv'}
+    ground_truth: dict  # {'slope', 'intercept_linear', 'intercept_noise', 'cv'}
 
 
 @dataclass
@@ -54,8 +55,19 @@ class CurveSimulator:
     intercept_noise: float = 500.0
     concentrations: list = field(
         default_factory=lambda: [
-            0.0, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 50.0,
-            100.0, 200.0, 500.0, 1000.0, 2000.0,
+            0.0,
+            0.5,
+            1.0,
+            2.0,
+            5.0,
+            10.0,
+            20.0,
+            50.0,
+            100.0,
+            200.0,
+            500.0,
+            1000.0,
+            2000.0,
         ]
     )
     n_replicates: int = 3
@@ -73,7 +85,7 @@ class CurveSimulator:
         area_list: list[float] = []
 
         for pep_idx in range(self.n_peptides):
-            pep_name = f'peptide_{pep_idx:04d}'
+            pep_name = f"peptide_{pep_idx:04d}"
             for c in concs:
                 # True signal: y = max(intercept_noise, slope * c + intercept_linear)
                 true_signal = max(self.intercept_noise, self.slope * c + self.intercept_linear)
@@ -86,10 +98,10 @@ class CurveSimulator:
                     area_list.append(area)
 
         ground_truth = {
-            'slope': self.slope,
-            'intercept_linear': self.intercept_linear,
-            'intercept_noise': self.intercept_noise,
-            'cv': self.cv,
+            "slope": self.slope,
+            "intercept_linear": self.intercept_linear,
+            "intercept_noise": self.intercept_noise,
+            "cv": self.cv,
         }
 
         return SimulatedDataset(

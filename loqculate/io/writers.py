@@ -1,4 +1,5 @@
 """CSV / TSV output helpers."""
+
 from __future__ import annotations
 
 import os
@@ -11,7 +12,7 @@ import pandas as pd
 def write_figures_of_merit(
     rows: Iterable[dict],
     output_path: Union[str, Path],
-    filename: str = 'figuresofmerit.csv',
+    filename: str = "figuresofmerit.csv",
 ) -> Path:
     """Write the LOD/LOQ table to a CSV file.
 
@@ -53,13 +54,13 @@ def stream_csv_writer(output_file: Union[str, Path], columns: list[str]):
         def __init__(self, path: Path, cols: list) -> None:
             self._path = path
             self._cols = cols
-            self._fh = open(path, 'w', newline='')
-            self._fh.write(','.join(cols) + '\n')
+            self._fh = open(path, "w", newline="")
+            self._fh.write(",".join(cols) + "\n")
             self._fh.flush()
 
         def __call__(self, row: dict) -> None:
-            values = [str(row.get(c, '')) for c in self._cols]
-            self._fh.write(','.join(values) + '\n')
+            values = [str(row.get(c, "")) for c in self._cols]
+            self._fh.write(",".join(values) + "\n")
             self._fh.flush()
             os.fsync(self._fh.fileno())
 

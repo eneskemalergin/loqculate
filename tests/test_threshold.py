@@ -1,4 +1,5 @@
 """Sliding-window threshold algorithm edge-case tests."""
+
 import numpy as np
 import pytest
 
@@ -63,3 +64,10 @@ class TestFindLoqThreshold:
         # x is not sorted here, but x[0]=1>threshold? no. x[1]=2 has cv=0.19
         # Actually threshold checks x[nonzero] as-is order, so first hit is x[1]=2.0
         assert loq == pytest.approx(2.0)
+
+    def test_window_less_than_one_returns_inf(self):
+        """window < 1 is not a valid consecutive window; return inf without crashing."""
+        x = np.array([1.0, 2.0, 3.0])
+        cv = np.array([0.1, 0.1, 0.1])
+        assert find_loq_threshold(x, cv, cv_thresh=0.2, window=0) == np.inf
+        assert find_loq_threshold(x, cv, cv_thresh=0.2, window=-1) == np.inf

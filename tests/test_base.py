@@ -1,10 +1,10 @@
 """Base class contract tests: every model must satisfy these."""
+
 import numpy as np
 import pytest
 
-from loqculate.models import PiecewiseWLS, EmpiricalCV
+from loqculate.models import EmpiricalCV, PiecewiseWLS
 from loqculate.models.base import CalibrationModel
-
 
 # Concrete models under test
 _MODEL_CLASSES = [PiecewiseWLS, EmpiricalCV]
@@ -19,11 +19,20 @@ def empty_model(request):
 def simple_xy():
     """Minimal valid dataset: 3 concentration levels, 3 reps each."""
     concs = np.repeat([1.0, 10.0, 100.0], 3)
-    areas = np.array([
-        550, 560, 540,      # noise plateau
-        5200, 5100, 5300,   # linear
-        50200, 49800, 50500,
-    ], dtype=float)
+    areas = np.array(
+        [
+            550,
+            560,
+            540,  # noise plateau
+            5200,
+            5100,
+            5300,  # linear
+            50200,
+            49800,
+            50500,
+        ],
+        dtype=float,
+    )
     return concs, areas
 
 
@@ -35,7 +44,7 @@ class TestBaseContract:
         assert not empty_model.is_fitted_
 
     def test_predict_before_fit_raises(self, empty_model):
-        with pytest.raises(RuntimeError, match=r'fit\(\)'):
+        with pytest.raises(RuntimeError, match=r"fit\(\)"):
             empty_model.predict(np.array([1.0]))
 
     def test_fit_returns_self(self, empty_model, simple_xy):
@@ -72,7 +81,7 @@ class TestBaseContract:
         empty_model.fit(x, y)
         s = empty_model.summary()
         assert isinstance(s, dict)
-        assert 'loq' in s
+        assert "loq" in s
 
     def test_supports_uloq_false_by_default(self, empty_model):
         assert not empty_model.supports_uloq()
@@ -96,18 +105,18 @@ class TestPiecewiseWLS:
     def test_params_keys(self, simple_xy):
         x, y = simple_xy
         model = PiecewiseWLS().fit(x, y)
-        assert 'slope' in model.params_
-        assert 'intercept_linear' in model.params_
-        assert 'intercept_noise' in model.params_
+        assert "slope" in model.params_
+        assert "intercept_linear" in model.params_
+        assert "intercept_noise" in model.params_
 
     def test_fit_too_few_points_raises(self):
-        with pytest.raises(ValueError, match='3 data points'):
+        with pytest.raises(ValueError, match="3 data points"):
             PiecewiseWLS().fit(np.array([1.0, 2.0]), np.array([1.0, 2.0]))
 
     def test_slope_positive(self, simple_xy):
         x, y = simple_xy
         model = PiecewiseWLS().fit(x, y)
-        assert model.params_['slope'] > 0
+        assert model.params_["slope"] > 0
 
 
 class TestEmpiricalCV:
@@ -141,12 +150,12 @@ class TestEmpiricalCV:
         """Fitting with n=1 at every concentration must raise ValueError (CV undefined)."""
         concs = np.array([1.0, 10.0, 100.0])
         areas = np.array([500.0, 5000.0, 50000.0])
-        with pytest.raises(ValueError, match='replicate'):
+        with pytest.raises(ValueError, match="replicate"):
             EmpiricalCV().fit(concs, areas)
 
     def test_two_reps_warns_not_raises(self):
         """With 2 reps per concentration CV is computable — only a warning."""
         concs = np.repeat([1.0, 10.0, 100.0], 2)
         areas = np.array([495.0, 505.0, 4950.0, 5050.0, 49500.0, 50500.0])
-        with pytest.warns(UserWarning, match='replicate'):
+        with pytest.warns(UserWarning, match="replicate"):
             EmpiricalCV(min_replicates=3).fit(concs, areas)

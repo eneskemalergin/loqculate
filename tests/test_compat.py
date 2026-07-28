@@ -10,6 +10,7 @@ Structure:
 Regression fixtures are skipped when the benchmark JSON or demo data files
 are absent (e.g. in minimal CI environments that only have tests/).
 """
+
 from __future__ import annotations
 
 import json
@@ -28,18 +29,19 @@ from loqculate.models.base import CalibrationModel
 # ---------------------------------------------------------------------------
 ROOT = Path(__file__).parent.parent
 DEMO_DATA = ROOT / "data" / "demo" / "one_protein.csv"
-DEMO_MAP  = ROOT / "data" / "demo" / "filename2samplegroup_map.csv"
+DEMO_MAP = ROOT / "data" / "demo" / "filename2samplegroup_map.csv"
 BENCH_WLS = ROOT / "tmp" / "results" / "bench_real_data.json"
-BENCH_CV  = ROOT / "tmp" / "results" / "bench_empirical.json"
+BENCH_CV = ROOT / "tmp" / "results" / "bench_empirical.json"
 
-needs_demo    = pytest.mark.skipif(not DEMO_DATA.exists(),  reason="demo data absent")
+needs_demo = pytest.mark.skipif(not DEMO_DATA.exists(), reason="demo data absent")
 needs_bench_w = pytest.mark.skipif(not BENCH_WLS.exists(), reason="bench_real_data.json absent")
-needs_bench_c = pytest.mark.skipif(not BENCH_CV.exists(),  reason="bench_empirical.json absent")
+needs_bench_c = pytest.mark.skipif(not BENCH_CV.exists(), reason="bench_empirical.json absent")
 
 
 # ---------------------------------------------------------------------------
 # Shared synthetic data
 # ---------------------------------------------------------------------------
+
 
 def _make_simple_curve(
     concs=(0.001, 0.01, 0.1, 1.0, 10.0),
@@ -78,6 +80,7 @@ def _make_low_cv_curve(
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _bench_val(v) -> float:
     """Convert JSON null (None) to inf for comparison; keep finite floats as-is."""
     return np.inf if v is None else float(v)
@@ -86,6 +89,7 @@ def _bench_val(v) -> float:
 def _load_demo_peptides() -> dict[str, tuple[np.ndarray, np.ndarray]]:
     """Load one_protein.csv via loqculate's reader."""
     from loqculate.io import read_calibration_data
+
     data = read_calibration_data(str(DEMO_DATA), str(DEMO_MAP))
     out: dict[str, tuple[np.ndarray, np.ndarray]] = {}
     for pep in np.unique(data.peptide):
@@ -97,6 +101,7 @@ def _load_demo_peptides() -> dict[str, tuple[np.ndarray, np.ndarray]]:
 # ---------------------------------------------------------------------------
 # 1. Interface / ABC compliance
 # ---------------------------------------------------------------------------
+
 
 class TestOriginalWLSInterface:
     def test_is_calibration_model(self):
@@ -146,13 +151,13 @@ class TestOriginalWLSInterface:
         x, y = _make_simple_curve()
         m = OriginalWLS().fit(x, y)
         s = m.summary()
-        for key in ('slope', 'intercept_linear', 'intercept_noise', 'lod', 'loq'):
+        for key in ("slope", "intercept_linear", "intercept_noise", "lod", "loq"):
             assert key in s, f"Missing key '{key}' in summary"
 
     def test_slope_positive(self):
         x, y = _make_simple_curve()
         m = OriginalWLS().fit(x, y)
-        assert m.params_['slope'] > 0
+        assert m.params_["slope"] > 0
 
     def test_not_fitted_before_fit(self):
         m = OriginalWLS()
@@ -208,25 +213,27 @@ class TestOriginalCVInterface:
 # 2. MODEL_REGISTRY
 # ---------------------------------------------------------------------------
 
+
 class TestModelRegistry:
     def test_original_wls_in_registry(self):
-        assert 'original_wls' in MODEL_REGISTRY
+        assert "original_wls" in MODEL_REGISTRY
 
     def test_original_cv_in_registry(self):
-        assert 'original_cv' in MODEL_REGISTRY
+        assert "original_cv" in MODEL_REGISTRY
 
     def test_registry_returns_correct_classes(self):
-        assert MODEL_REGISTRY['original_wls'] is OriginalWLS
-        assert MODEL_REGISTRY['original_cv'] is OriginalCV
+        assert MODEL_REGISTRY["original_wls"] is OriginalWLS
+        assert MODEL_REGISTRY["original_cv"] is OriginalCV
 
     def test_can_instantiate_from_registry(self):
-        m = MODEL_REGISTRY['original_wls']()
+        m = MODEL_REGISTRY["original_wls"]()
         assert isinstance(m, OriginalWLS)
 
 
 # ---------------------------------------------------------------------------
 # 3. Synthetic unit tests
 # ---------------------------------------------------------------------------
+
 
 class TestOriginalWLSSynthetic:
     def test_loq_below_max_concentration(self):
@@ -330,6 +337,7 @@ class TestOriginalCVSynthetic:
 # 4. Regression: OriginalWLS vs bench_real_data.json
 # ---------------------------------------------------------------------------
 
+
 @needs_demo
 @needs_bench_w
 class TestOriginalWLSRegression:
@@ -350,13 +358,13 @@ class TestOriginalWLSRegression:
     # 20% — matches the original benchmark's own lod_tol parameter.
     LOD_RTOL = 0.20
 
-    @pytest.fixture(scope='class')
+    @pytest.fixture(scope="class")
     def bench(self):
         with open(BENCH_WLS) as f:
             d = json.load(f)
-        return d['per_peptide']
+        return d["per_peptide"]
 
-    @pytest.fixture(scope='class')
+    @pytest.fixture(scope="class")
     def wls_results(self):
         """Fit OriginalWLS on every peptide in one_protein.csv."""
         peptides = _load_demo_peptides()
@@ -365,9 +373,9 @@ class TestOriginalWLSRegression:
             m = OriginalWLS(n_boot=100, cv_thresh=0.2, std_mult=2.0)
             try:
                 m.fit(x, y)
-                results[pep] = {'lod': m.lod(), 'loq': m.loq()}
+                results[pep] = {"lod": m.lod(), "loq": m.loq()}
             except Exception as exc:  # noqa: BLE001
-                results[pep] = {'lod': np.inf, 'loq': np.inf, 'error': str(exc)}
+                results[pep] = {"lod": np.inf, "loq": np.inf, "error": str(exc)}
         return results
 
     def test_lod_agreement(self, bench, wls_results):
@@ -386,28 +394,22 @@ class TestOriginalWLSRegression:
             # Skip peptides where the original script and loqculate's PiecewiseWLS
             # already diverge — these are known solver-difference cases (lmfit LM
             # vs scipy TRF) unrelated to compat correctness.
-            if bench_row.get('lod_cat_orig_w1', '').startswith('diverge'):
+            if bench_row.get("lod_cat_orig_w1", "").startswith("diverge"):
                 continue
 
-            expected = _bench_val(bench_row['orig_lod'])
-            got = wls_results[pep]['lod']
+            expected = _bench_val(bench_row["orig_lod"])
+            got = wls_results[pep]["lod"]
 
             if not math.isfinite(expected) and not math.isfinite(got):
                 continue  # both inf — agree
             if not math.isfinite(expected) or not math.isfinite(got):
-                failures.append(
-                    f'{pep}: expected={expected:.6g}, got={got:.6g} (one is inf)'
-                )
+                failures.append(f"{pep}: expected={expected:.6g}, got={got:.6g} (one is inf)")
                 continue
             rdiff = abs(got - expected) / max(abs(expected), abs(got))
             if rdiff > self.LOD_RTOL:
-                failures.append(
-                    f'{pep}: expected={expected:.6g}, got={got:.6g}, rdiff={rdiff:.1%}'
-                )
+                failures.append(f"{pep}: expected={expected:.6g}, got={got:.6g}, rdiff={rdiff:.1%}")
 
-        assert not failures, (
-            f'{len(failures)} LOD regression failure(s):\n' + '\n'.join(failures)
-        )
+        assert not failures, f"{len(failures)} LOD regression failure(s):\n" + "\n".join(failures)
 
     def test_loq_inf_category(self, bench, wls_results):
         """Where no LOD can be found, OriginalWLS must also produce inf LOQ.
@@ -427,31 +429,29 @@ class TestOriginalWLSRegression:
             if pep not in wls_results:
                 continue
             # Use the most conservative condition: no LOD at all
-            if bench_row.get('lod_cat_orig_w1', '') != 'both=inf':
+            if bench_row.get("lod_cat_orig_w1", "") != "both=inf":
                 continue
-            got_loq = wls_results[pep]['loq']
-            got_lod = wls_results[pep]['lod']
+            got_loq = wls_results[pep]["loq"]
+            got_lod = wls_results[pep]["lod"]
             if math.isfinite(got_lod):
-                failures.append(f'{pep}: bench says LOD=inf but OriginalWLS LOD={got_lod:.6g}')
+                failures.append(f"{pep}: bench says LOD=inf but OriginalWLS LOD={got_lod:.6g}")
             elif math.isfinite(got_loq):
-                failures.append(f'{pep}: LOD=inf but OriginalWLS LOQ={got_loq:.6g} (should be inf)')
+                failures.append(f"{pep}: LOD=inf but OriginalWLS LOQ={got_loq:.6g} (should be inf)")
 
-        assert not failures, (
-            f'{len(failures)} LOQ category failure(s):\n' + '\n'.join(failures)
-        )
+        assert not failures, f"{len(failures)} LOQ category failure(s):\n" + "\n".join(failures)
 
     def test_inf_lod_agreement(self, bench, wls_results):
         """Peptides where bench shows inf LOD should also have inf LOD from OriginalWLS."""
         for pep, bench_row in bench.items():
             if pep not in wls_results:
                 continue
-            if bench_row.get('lod_cat_orig_w1', '').startswith('diverge'):
+            if bench_row.get("lod_cat_orig_w1", "").startswith("diverge"):
                 continue  # known solver-difference case, skip
-            expected = _bench_val(bench_row['orig_lod'])
-            got = wls_results[pep]['lod']
+            expected = _bench_val(bench_row["orig_lod"])
+            got = wls_results[pep]["lod"]
             if not math.isfinite(expected):
                 assert not math.isfinite(got), (
-                    f'{pep}: bench LOD is inf but OriginalWLS returned {got}'
+                    f"{pep}: bench LOD is inf but OriginalWLS returned {got}"
                 )
 
 
@@ -459,18 +459,19 @@ class TestOriginalWLSRegression:
 # 5. Regression: OriginalCV vs bench_empirical.json
 # ---------------------------------------------------------------------------
 
+
 @needs_demo
 @needs_bench_c
 class TestOriginalCVRegression:
     """Compare OriginalCV LOQ against stored benchmark from the original loq_by_cv.py."""
 
-    @pytest.fixture(scope='class')
+    @pytest.fixture(scope="class")
     def bench(self):
         with open(BENCH_CV) as f:
             d = json.load(f)
-        return d['regression']['per_peptide']
+        return d["regression"]["per_peptide"]
 
-    @pytest.fixture(scope='class')
+    @pytest.fixture(scope="class")
     def cv_results(self):
         """Fit OriginalCV on every peptide in one_protein.csv."""
         peptides = _load_demo_peptides()
@@ -479,9 +480,9 @@ class TestOriginalCVRegression:
             m = OriginalCV(cv_thresh=0.2)
             try:
                 m.fit(x, y)
-                results[pep] = {'loq': m.loq()}
+                results[pep] = {"loq": m.loq()}
             except Exception as exc:  # noqa: BLE001
-                results[pep] = {'loq': np.inf, 'error': str(exc)}
+                results[pep] = {"loq": np.inf, "error": str(exc)}
         return results
 
     def test_loq_exact_match(self, bench, cv_results):
@@ -490,22 +491,16 @@ class TestOriginalCVRegression:
         for pep, bench_row in bench.items():
             if pep not in cv_results:
                 continue
-            expected = _bench_val(bench_row['orig_loq'])
-            got = cv_results[pep]['loq']
+            expected = _bench_val(bench_row["orig_loq"])
+            got = cv_results[pep]["loq"]
 
             if not math.isfinite(expected) and not math.isfinite(got):
                 continue
             if not math.isfinite(expected) or not math.isfinite(got):
-                failures.append(
-                    f'{pep}: expected={expected}, got={got} (one is inf)'
-                )
+                failures.append(f"{pep}: expected={expected}, got={got} (one is inf)")
                 continue
             # Exact match expected — both are first minimum CV concentration
             if not math.isclose(got, expected, rel_tol=1e-9):
-                failures.append(
-                    f'{pep}: expected={expected:.6g}, got={got:.6g}'
-                )
+                failures.append(f"{pep}: expected={expected:.6g}, got={got:.6g}")
 
-        assert not failures, (
-            f'{len(failures)} LOQ regression failure(s):\n' + '\n'.join(failures)
-        )
+        assert not failures, f"{len(failures)} LOQ regression failure(s):\n" + "\n".join(failures)

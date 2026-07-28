@@ -30,7 +30,9 @@ class CalibrationModel(ABC):
     # ------------------------------------------------------------------
 
     @abstractmethod
-    def fit(self, x: np.ndarray, y: np.ndarray, weights: Optional[np.ndarray] = None) -> "CalibrationModel":
+    def fit(
+        self, x: np.ndarray, y: np.ndarray, weights: Optional[np.ndarray] = None
+    ) -> "CalibrationModel":
         """Fit the model.  Return *self* for chaining."""
 
     @abstractmethod

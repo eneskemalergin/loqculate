@@ -22,6 +22,7 @@ from loqculate.utils.weights import inverse_sqrt_weights
 # Piecewise function
 # ---------------------------------------------------------------------------
 
+
 def _piecewise(x: np.ndarray, a: float, b: float, c_minus_b: float) -> np.ndarray:
     """Piecewise linear / noise plateau model.
 
@@ -37,6 +38,7 @@ def _piecewise(x: np.ndarray, a: float, b: float, c_minus_b: float) -> np.ndarra
 # ---------------------------------------------------------------------------
 # Initial-guess helpers (ported from original Pino implementation)
 # ---------------------------------------------------------------------------
+
 
 def _initialize_params_legacy(x: np.ndarray, y: np.ndarray):
     """2019 Pino model: slope from two highest points, intercept at lowest."""
@@ -95,6 +97,7 @@ def _initialize_params(x: np.ndarray, y: np.ndarray, weights: np.ndarray):
 # Model
 # ---------------------------------------------------------------------------
 
+
 class PiecewiseWLS(CalibrationModel):
     """Pino 2020 piecewise WLS model, reimplemented with scipy TRF optimization.
 
@@ -137,7 +140,7 @@ class PiecewiseWLS(CalibrationModel):
 
     def __init__(
         self,
-        init_method: str = 'legacy',
+        init_method: str = "legacy",
         n_boot_reps: int = DEFAULT_BOOT_REPS,
         seed: int = 42,
         min_noise_points: int = DEFAULT_MIN_NOISE_POINTS,
@@ -174,9 +177,7 @@ class PiecewiseWLS(CalibrationModel):
         y = np.asarray(y, dtype=float)
 
         if len(x) < 3:
-            raise ValueError(
-                f"PiecewiseWLS.fit() requires at least 3 data points, got {len(x)}."
-            )
+            raise ValueError(f"PiecewiseWLS.fit() requires at least 3 data points, got {len(x)}.")
 
         self.x_ = x
         self.y_ = y
@@ -189,7 +190,7 @@ class PiecewiseWLS(CalibrationModel):
         self.weights_ = w
 
         # Initial parameter guesses
-        if self.init_method == 'legacy':
+        if self.init_method == "legacy":
             a0, b0, c0 = _initialize_params_legacy(x, y)
         else:
             a0, b0, c0 = _initialize_params(x, y, w)
@@ -226,9 +227,9 @@ class PiecewiseWLS(CalibrationModel):
         c = b + cmb
 
         self.params_ = {
-            'slope': float(a),
-            'intercept_linear': float(b),
-            'intercept_noise': float(c),
+            "slope": float(a),
+            "intercept_linear": float(b),
+            "intercept_noise": float(c),
         }
         self.is_fitted_ = True
 
@@ -247,9 +248,9 @@ class PiecewiseWLS(CalibrationModel):
     def predict(self, x_new: np.ndarray) -> np.ndarray:
         self._check_is_fitted()
         x_new = np.asarray(x_new, dtype=float)
-        a = self.params_['slope']
-        b = self.params_['intercept_linear']
-        c = self.params_['intercept_noise']
+        a = self.params_["slope"]
+        b = self.params_["intercept_linear"]
+        c = self.params_["intercept_noise"]
         return np.maximum(c, a * x_new + b)
 
     # ------------------------------------------------------------------
@@ -263,9 +264,9 @@ class PiecewiseWLS(CalibrationModel):
         if std_mult in self._lod_cache:
             return self._lod_cache[std_mult]
 
-        a = self.params_['slope']
-        b = self.params_['intercept_linear']
-        c = self.params_['intercept_noise']
+        a = self.params_["slope"]
+        b = self.params_["intercept_linear"]
+        c = self.params_["intercept_noise"]
         x = self.x_
         y = self.y_
 
@@ -324,7 +325,7 @@ class PiecewiseWLS(CalibrationModel):
 
         loq_val = find_loq_threshold(
             self._x_grid,
-            self._boot_summary['cv'],
+            self._boot_summary["cv"],
             cv_thresh=cv_thresh,
             window=self.sliding_window,
         )
@@ -349,7 +350,7 @@ class PiecewiseWLS(CalibrationModel):
             self.x_,
             self.y_,
             PiecewiseWLS,
-            {'init_method': self.init_method, 'n_boot_reps': 0},
+            {"init_method": self.init_method, "n_boot_reps": 0},
             x_new,
             n_reps=self.n_boot_reps,
             seed=self.seed,
@@ -365,12 +366,12 @@ class PiecewiseWLS(CalibrationModel):
     def summary(self) -> dict:
         self._check_is_fitted()
         return {
-            'slope': self.params_['slope'],
-            'intercept_linear': self.params_['intercept_linear'],
-            'intercept_noise': self.params_['intercept_noise'],
-            'lod': self.lod(),
-            'loq': self.loq(),
-            'n_points': len(self.x_),
+            "slope": self.params_["slope"],
+            "intercept_linear": self.params_["intercept_linear"],
+            "intercept_noise": self.params_["intercept_noise"],
+            "lod": self.lod(),
+            "loq": self.loq(),
+            "n_points": len(self.x_),
         }
 
     # ------------------------------------------------------------------
@@ -392,9 +393,9 @@ class PiecewiseWLS(CalibrationModel):
         x_grid = np.linspace(lod_val, float(np.max(self.x_)), num=self.grid_points)
 
         # p0_warm passed for API completeness; cold-start is used per replicate.
-        a = self.params_['slope']
-        b = self.params_['intercept_linear']
-        cmb = self.params_['intercept_noise'] - b
+        a = self.params_["slope"]
+        b = self.params_["intercept_linear"]
+        cmb = self.params_["intercept_noise"] - b
         p0_warm = np.array([a, b, max(cmb, 1e-5)])
 
         # Pre-compute sigma once; bootstrap reps reuse sigma[idx].
@@ -416,6 +417,7 @@ class PiecewiseWLS(CalibrationModel):
 # ---------------------------------------------------------------------------
 # Lean warm-start bootstrap (module-level, no circular import)
 # ---------------------------------------------------------------------------
+
 
 def _bootstrap_lean_piecewise(
     x: np.ndarray,
@@ -465,11 +467,11 @@ def _bootstrap_lean_piecewise(
     if np.unique(y).size <= 1:
         const = float(y[0]) if n else np.nan
         summary = {
-            'mean': np.full(n_grid, const),
-            'std': np.zeros(n_grid),
-            'cv': np.full(n_grid, np.inf),
-            'pct_5': np.full(n_grid, const),
-            'pct_95': np.full(n_grid, const),
+            "mean": np.full(n_grid, const),
+            "std": np.zeros(n_grid),
+            "cv": np.full(n_grid, np.inf),
+            "pct_5": np.full(n_grid, const),
+            "pct_95": np.full(n_grid, const),
         }
         return np.full((n_reps, n_grid), np.nan), summary
 
@@ -519,17 +521,16 @@ def _bootstrap_lean_piecewise(
             c = b + cmb
             predictions[i] = np.maximum(c, a * x_grid + b)
 
-    with np.errstate(invalid='ignore'):
+    with np.errstate(invalid="ignore"):
         mean_pred = np.nanmean(predictions, axis=0)
         std_pred = np.nanstd(predictions, axis=0, ddof=1)
         cv_pred = np.where(mean_pred != 0, std_pred / mean_pred, np.inf)
 
     summary = {
-        'mean': mean_pred,
-        'std': std_pred,
-        'cv': cv_pred,
-        'pct_5': np.nanpercentile(predictions, 5, axis=0),
-        'pct_95': np.nanpercentile(predictions, 95, axis=0),
+        "mean": mean_pred,
+        "std": std_pred,
+        "cv": cv_pred,
+        "pct_5": np.nanpercentile(predictions, 5, axis=0),
+        "pct_95": np.nanpercentile(predictions, 95, axis=0),
     }
     return predictions, summary
-
