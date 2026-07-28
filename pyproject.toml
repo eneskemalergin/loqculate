@@ -28,7 +28,6 @@ dependencies = [
     "matplotlib>=3.7",
     "tqdm>=4.64",
     "lmfit>=1.2",
-    "numba>=0.64.0",
 ]
 
 [project.optional-dependencies]
@@ -43,8 +42,8 @@ dev = [
 loqculate = "loqculate.cli:main"
 
 [project.urls]
-Repository = "https://github.com/MatrixMatched-Project/loqculate"
-"Bug Tracker" = "https://github.com/MatrixMatched-Project/loqculate/issues"
+Repository = "https://github.com/eneskemalergin/loqculate"
+"Bug Tracker" = "https://github.com/eneskemalergin/loqculate/issues"
 
 [tool.setuptools.packages.find]
 where = ["."]

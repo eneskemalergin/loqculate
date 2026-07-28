@@ -21,6 +21,7 @@ On the demo 27-peptide set (`PiecewiseCF`, $B=200$, seed 42), measured LOQ-only 
 - **Config** defaults `DEFAULT_DELTA_GRID_POINTS = 1000` and `DEFAULT_KINK_GUARD_FACTOR = 2`.
 - **`benchmarks/bench_delta_vs_boot.py`** for wall time and agreement on the demo set.
 - **Tests** for delta variance, kink band, small-$n_L$ warnings, cache isolation, CLI `--fast` vs pure API, and threshold edges.
+- CI on Linux, macOS, and Windows (x64 and arm64). Full Python 3.10–3.12 on Linux x64; Python 3.12 on the other five runners. Dependabot weekly updates for pip and GitHub Actions.
 
 ### Changed
 
@@ -28,11 +29,17 @@ On the demo 27-peptide set (`PiecewiseCF`, $B=200$, seed 42), measured LOQ-only 
 - LOQ cache keys include method as well as CV threshold, so bootstrap and delta cannot overwrite each other.
 - Missing weights after fit raise on the delta path; missing covariance or undefined MSE yield infinite analytical LOQ.
 - Delta path emits `UserWarning` when $3 \le n_L < 5$; it still computes.
+- Some regression float tolerances widened slightly so the same checks hold across OS and CPU architectures.
+
+### Removed
+
+- Unused runtime dependency `numba` (not imported anywhere; no Windows arm64 wheel on PyPI).
 
 ### Fixed
 
-- **`PiecewiseCF.covariance()`** returns `None` when $n_L < 3$, avoiding division by zero in the residual MSE ($n_L-2$).
+- **`PiecewiseCF.covariance()`** returns `None` when $n_{L} < 3$, avoiding division by zero in the residual MSE ($n_{L}-2$).
 - **`find_loq_threshold`** returns infinite LOQ for `window < 1` instead of raising inside the window scan.
+- Project URLs in `pyproject.toml` point at the current GitHub repository.
 
 ---
 
