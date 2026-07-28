@@ -80,6 +80,11 @@ def prediction_variance(x0: float, mse: float, cov: np.ndarray) -> float:
         Linear-segment weighted residual MSE.
     cov:
         2x2 parameter covariance with MSE already included.
+
+    Returns
+    -------
+    float
+        Non-negative prediction variance at ``x0``.
     """
     w0 = float(inverse_sqrt_weights(np.asarray([x0], dtype=float))[0])
     W0 = w0**2
@@ -92,7 +97,6 @@ def delta_cv_profile(
     host: object,
     *,
     n_grid: int = DEFAULT_DELTA_GRID_POINTS,
-    kink_guard_factor: float = DEFAULT_KINK_GUARD_FACTOR,
     lod: float | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Return ``(x_grid, cv)`` from LOD to ``max(x)`` for the delta method.
@@ -100,6 +104,21 @@ def delta_cv_profile(
     Points inside the kink band receive ``cv = inf``.  When the analytical
     path is unavailable, both arrays are empty.  Warns when
     ``3 <= n_L < 5``.
+
+    Parameters
+    ----------
+    host:
+        Fitted piecewise host with ``predict``, ``covariance``, ``lod``,
+        ``weights_``, training arrays, and ``params_``.
+    n_grid:
+        Number of concentration grid points from LOD to ``max(x)``.
+    lod:
+        Optional LOD override.  When omitted, uses ``host.lod()``.
+
+    Returns
+    -------
+    x_grid, cv : tuple of ndarray
+        Matching-length concentration and CV arrays, or two empty arrays.
     """
     _require_fitted_weights(host)
 
@@ -130,7 +149,7 @@ def delta_cv_profile(
 
     x_star = kink_concentration(host)
     spacing = min_concentration_spacing(host.x_)
-    half_band = kink_guard_factor * spacing
+    half_band = DEFAULT_KINK_GUARD_FACTOR * spacing
 
     w0 = inverse_sqrt_weights(x_grid)
     W0 = w0**2
@@ -152,7 +171,6 @@ def delta_loq(
     cv_thresh: float = DEFAULT_CV_THRESH,
     n_grid: int = DEFAULT_DELTA_GRID_POINTS,
     *,
-    kink_guard_factor: float = DEFAULT_KINK_GUARD_FACTOR,
     window: int = DEFAULT_SLIDING_WINDOW,
 ) -> float:
     """Return analytical LOQ from the delta-method CV profile, or ``inf``.
@@ -162,7 +180,7 @@ def delta_loq(
     RuntimeError
         If the host is not fitted or ``weights_`` is missing.
     """
-    x_grid, cv = delta_cv_profile(host, n_grid=n_grid, kink_guard_factor=kink_guard_factor)
+    x_grid, cv = delta_cv_profile(host, n_grid=n_grid)
     if x_grid.size == 0:
         return float(np.inf)
 
@@ -173,6 +191,7 @@ def delta_loq(
 
 
 def _require_fitted_weights(host: object) -> None:
+    """Raise ``RuntimeError`` if the host is unfitted or ``weights_`` is missing."""
     if not getattr(host, "is_fitted_", False):
         raise RuntimeError("Host must be fitted before delta-method LOQ.")
     if getattr(host, "weights_", None) is None:

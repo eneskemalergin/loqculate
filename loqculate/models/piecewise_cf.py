@@ -9,7 +9,6 @@ The solver is deterministic and cannot be trapped in local minima.
 from __future__ import annotations
 
 import warnings
-from typing import Optional
 
 import numpy as np
 
@@ -25,15 +24,10 @@ from loqculate.config import (
     VECTORIZED_BOOTSTRAP_MEMORY_LIMIT_MB,
 )
 from loqculate.models.base import CalibrationModel
-from loqculate.models.delta_method import delta_loq as compute_delta_loq
-from loqculate.models.delta_method import linear_segment_mse
+from loqculate.models.delta_method import delta_loq, linear_segment_mse
 from loqculate.utils.knot_search import _fit_and_constrain, find_knot
 from loqculate.utils.threshold import find_loq_threshold
 from loqculate.utils.weights import inverse_sqrt_weights
-
-# ---------------------------------------------------------------------------
-# Model
-# ---------------------------------------------------------------------------
 
 
 class PiecewiseCF(CalibrationModel):
@@ -80,9 +74,10 @@ class PiecewiseCF(CalibrationModel):
         when LOD is infinite or the CV never drops below threshold.
     loq_delta(cv_thresh=0.20, n_grid=1000) -> float
         Analytical LOQ from prediction-variance CV.  Does not run bootstrap.
-    covariance() -> ndarray or None
-        2x2 parameter covariance matrix for the linear segment (slope,
-        intercept).  Returns ``None`` when slope == 0 (degenerate fit).
+    covariance(*, mse=None) -> ndarray or None
+        2x2 linear-segment parameter covariance (MSE included).  Optional
+        ``mse`` reuses a precomputed linear-segment MSE.  Returns ``None``
+        when undefined (unfitted, slope 0, or fewer than three linear points).
     summary() -> dict
         Flat dict with slope, intercept_linear, intercept_noise, knot_x,
         lod, loq, n_points.
@@ -115,20 +110,17 @@ class PiecewiseCF(CalibrationModel):
 
         self._lod_cache: dict = {}
         self._loq_cache: dict = {}
-        self._boot_summary: Optional[dict] = None
-        self._x_grid: Optional[np.ndarray] = None
-        self._gram_inv: Optional[np.ndarray] = None
-
-    # ------------------------------------------------------------------
-    # fit
-    # ------------------------------------------------------------------
+        self._boot_summary: dict | None = None
+        self._x_grid: np.ndarray | None = None
+        self._gram_inv: np.ndarray | None = None
 
     def fit(
         self,
         x: np.ndarray,
         y: np.ndarray,
-        weights: Optional[np.ndarray] = None,
-    ) -> "PiecewiseCF":
+        weights: np.ndarray | None = None,
+    ) -> PiecewiseCF:
+        """Fit the piecewise curve and cache the linear-segment Gram inverse."""
         x = np.asarray(x, dtype=float)
         y = np.asarray(y, dtype=float)
 
@@ -180,21 +172,14 @@ class PiecewiseCF(CalibrationModel):
 
         return self
 
-    # ------------------------------------------------------------------
-    # predict
-    # ------------------------------------------------------------------
-
     def predict(self, x_new: np.ndarray) -> np.ndarray:
+        """Return ``max(c, a*x + b)`` at the requested concentrations."""
         self._check_is_fitted()
         x_new = np.asarray(x_new, dtype=float)
         a = self.params_["slope"]
         b = self.params_["intercept_linear"]
         c = self.params_["intercept_noise"]
         return np.maximum(c, a * x_new + b)
-
-    # ------------------------------------------------------------------
-    # lod
-    # ------------------------------------------------------------------
 
     def lod(self, std_mult: float = DEFAULT_STD_MULT) -> float:
         """Limit of detection using the same formula as :class:`PiecewiseWLS`."""
@@ -236,10 +221,6 @@ class PiecewiseCF(CalibrationModel):
         self._lod_cache[std_mult] = float(lod_val)
         return float(lod_val)
 
-    # ------------------------------------------------------------------
-    # loq
-    # ------------------------------------------------------------------
-
     def loq_delta(
         self,
         cv_thresh: float = DEFAULT_CV_THRESH,
@@ -251,7 +232,7 @@ class PiecewiseCF(CalibrationModel):
         result is infinite.
         """
         self._check_is_fitted()
-        return compute_delta_loq(
+        return delta_loq(
             self,
             cv_thresh=cv_thresh,
             n_grid=n_grid,
@@ -317,11 +298,8 @@ class PiecewiseCF(CalibrationModel):
         self._loq_cache[cache_key] = loq_val
         return loq_val
 
-    # ------------------------------------------------------------------
-    # summary
-    # ------------------------------------------------------------------
-
     def summary(self) -> dict:
+        """Return slope, intercepts, knot, LOD, bootstrap LOQ, and point count."""
         self._check_is_fitted()
         return {
             "slope": self.params_["slope"],
@@ -333,11 +311,7 @@ class PiecewiseCF(CalibrationModel):
             "n_points": len(self.x_),
         }
 
-    # ------------------------------------------------------------------
-    # covariance
-    # ------------------------------------------------------------------
-
-    def covariance(self, *, mse: float | None = None) -> Optional[np.ndarray]:
+    def covariance(self, *, mse: float | None = None) -> np.ndarray | None:
         """Return the 2x2 parameter covariance matrix for the linear segment.
 
         Shape ``(2, 2)``::
@@ -375,10 +349,6 @@ class PiecewiseCF(CalibrationModel):
             return None
         return float(mse) * self._gram_inv
 
-    # ------------------------------------------------------------------
-    # Private helpers
-    # ------------------------------------------------------------------
-
     def _ensure_boot_summary(self, lod_val: float) -> None:
         if self._boot_summary is not None:
             return
@@ -405,12 +375,7 @@ class PiecewiseCF(CalibrationModel):
         self._boot_summary = summary
 
 
-# ---------------------------------------------------------------------------
-# Gram matrix inverse (stored in fit, used by covariance())
-# ---------------------------------------------------------------------------
-
-
-def _gram_inverse(x_lin: np.ndarray, W_lin: np.ndarray) -> Optional[np.ndarray]:
+def _gram_inverse(x_lin: np.ndarray, W_lin: np.ndarray) -> np.ndarray | None:
     """Return the 2x2 inverse of the WLS Gram matrix for the linear segment.
 
     G = [[sum(W*x^2), sum(W*x)], [sum(W*x), sum(W)]]
@@ -424,11 +389,6 @@ def _gram_inverse(x_lin: np.ndarray, W_lin: np.ndarray) -> Optional[np.ndarray]:
         return None
     inv = np.array([[sum_W, -sum_Wx], [-sum_Wx, sum_Wxx]]) / det
     return inv
-
-
-# ---------------------------------------------------------------------------
-# Vectorized bootstrap
-# ---------------------------------------------------------------------------
 
 
 def _bootstrap_vectorized_cf(
@@ -452,7 +412,7 @@ def _bootstrap_vectorized_cf(
         SeedSequence(seed).spawn(n_reps)[i] → default_rng(cs).choice(n, n, replace=True)
 
     Each replicate resamples ``(x, y, W)`` jointly (standard nonparametric
-    bootstrap — same observation-level pairs). Candidate ``k`` is only
+    bootstrap - same observation-level pairs). Candidate ``k`` is only
     evaluated for replicate ``i`` when ``k ∈ unique(X_mat[i])`` and ``k`` is
     an interior point of that resample (not the per-rep min or max), exactly
     mirroring ``find_knot(xb)``'s ``unique(xb)[1:-1]`` candidate set.
@@ -482,12 +442,11 @@ def _bootstrap_vectorized_cf(
     Returns
     -------
     predictions : ndarray, shape (n_reps, len(x_grid))
-    summary : dict — keys ``mean``, ``std``, ``cv``, ``pct_5``, ``pct_95``.
+    summary : dict - keys ``mean``, ``std``, ``cv``, ``pct_5``, ``pct_95``.
     """
     n = len(x)
     n_grid = len(x_grid)
 
-    # ── n_reps == 0: identical early-return to the loop path ──────────────
     if n_reps == 0:
         summary = {
             "mean": np.full(n_grid, np.nan),
@@ -498,7 +457,6 @@ def _bootstrap_vectorized_cf(
         }
         return np.empty((0, n_grid)), summary
 
-    # ── Memory guard ───────────────────────────────────────────────────────
     # Estimated peak working set: ~12 matrices of shape (n_reps, n).
     # The guard fires when ONE such matrix exceeds the configured limit,
     # ensuring total working set stays within ~12× the limit.
@@ -513,7 +471,6 @@ def _bootstrap_vectorized_cf(
         )
         return _bootstrap_loop_cf(x, y, W, x_grid, n_reps, seed)
 
-    # ── Degenerate shortcut: constant signal ───────────────────────────────
     if np.unique(y).size <= 1:
         const = float(y[0]) if n else np.nan
         summary = {
@@ -525,10 +482,9 @@ def _bootstrap_vectorized_cf(
         }
         return np.full((n_reps, n_grid), np.nan), summary
 
-    # ── Build idx_matrix using identical seeding to the loop path ─────────
     # SeedSequence(seed).spawn(n_reps)[i] → default_rng(cs).choice(n, n)
     # mirrors _bootstrap_loop_cf exactly, so X_matrix[i] = x[idx_i],
-    # Y_matrix[i] = y[idx_i], W_matrix[i] = W[idx_i] — full paired resample.
+    # Y_matrix[i] = y[idx_i], W_matrix[i] = W[idx_i] - full paired resample.
     ss = np.random.SeedSequence(seed)
     child_seeds = ss.spawn(n_reps)
     idx_matrix = np.array(
@@ -539,11 +495,10 @@ def _bootstrap_vectorized_cf(
     X_mat = x[idx_matrix]  # (n_reps, n)
     Y_mat = y[idx_matrix]  # (n_reps, n)
     W_mat = W[idx_matrix]  # (n_reps, n)
-    X2_mat = X_mat**2  # (n_reps, n) — precomputed once
+    X2_mat = X_mat**2  # (n_reps, n) - precomputed once
 
-    # ── Candidate loop: vectorized over all replicates ─────────────────────
     # Candidates are drawn from the ORIGINAL unique(x)[1:-1], but a candidate
-    # k is only eligible for replicate i if k ∈ unique(X_mat[i]) — matching
+    # k is only eligible for replicate i if k ∈ unique(X_mat[i]) - matching
     # the loop path's find_knot(xb) which uses unique(xb)[1:-1].  When a
     # bootstrap resample drops a concentration level, the missing k would
     # partition the resampled data differently from any present candidate,
@@ -565,9 +520,9 @@ def _bootstrap_vectorized_cf(
 
     for k in candidates:
         # k is a valid interior candidate for rep i iff:
-        #   1. k ∈ unique(xb_i)  — k appears in the resample
-        #   2. k ≠ min(xb_i)     — k is not the per-rep minimum
-        #   3. k ≠ max(xb_i)     — k is not the per-rep maximum
+        #   1. k ∈ unique(xb_i)  - k appears in the resample
+        #   2. k ≠ min(xb_i)     - k is not the per-rep minimum
+        #   3. k ≠ max(xb_i)     - k is not the per-rep maximum
         # Conditions 2 & 3 match unique(xb)[1:-1] which strips first/last.
         # X_mat / x values are exact float64 copies so == is bit-exact.
         rep_has_k = np.any(X_mat == k, axis=1)  # (n_reps,) bool
@@ -575,11 +530,10 @@ def _bootstrap_vectorized_cf(
         if not rep_k_interior.any():
             continue
 
-        # Per-rep binary partition at k — mask varies because X_mat varies.
+        # Per-rep binary partition at k - mask varies because X_mat varies.
         C = (X_mat <= k).astype(np.float64)  # (n_reps, n)
         L = 1.0 - C
 
-        # ── Noise segment: weighted mean ───────────────────────────────────
         sum_W_n = np.sum(W_mat * C, axis=1)  # (n_reps,)
         # Divide only where sum_W_n > 0; fall back to unweighted mean otherwise
         # (mirrors _fit_and_constrain's explicit if/elif guard).
@@ -591,7 +545,6 @@ def _bootstrap_vectorized_cf(
         )
         rss_n = np.sum(W_mat * C * (Y_mat - c_arr[:, None]) ** 2, axis=1)
 
-        # ── Linear segment: normal equations ──────────────────────────────
         sum_WXX = np.sum(W_mat * X2_mat * L, axis=1)
         sum_WX = np.sum(W_mat * X_mat * L, axis=1)
         sum_WYX = np.sum(W_mat * Y_mat * X_mat * L, axis=1)
@@ -611,13 +564,11 @@ def _bootstrap_vectorized_cf(
         )
         b_arr = np.where(valid, (sum_WXX * sum_WY - sum_WX * sum_WYX) / safe_det, lin_wmean)
 
-        # ── Constraint 1: slope < 0 → weighted mean of linear observations ─
         neg = a_arr < 0
         if neg.any():
             a_arr[neg] = 0.0
             b_arr[neg] = lin_wmean[neg]
 
-        # ── Constraint 2: noise floor < linear intercept → clamp ──────────
         clamp = c_arr < b_arr
         if clamp.any():
             c_arr[clamp] = b_arr[clamp]
@@ -641,9 +592,8 @@ def _bootstrap_vectorized_cf(
             best_c[improve] = c_arr[improve]
             best_kx[improve] = float(k)
 
-    # ── Phase 2: analytical refinement (scalar loop, same rule as find_knot) ─
     # Each replicate may have a different x_join, preventing vectorization.
-    # One _fit_and_constrain call per replicate — same cost as the corresponding
+    # One _fit_and_constrain call per replicate - same cost as the corresponding
     # call inside find_knot.
     for i in range(n_reps):
         ai = best_a[i]
@@ -659,9 +609,8 @@ def _bootstrap_vectorized_cf(
         best_b[i] = int_r
         best_c[i] = c_r
 
-    # ── Grid predictions and summary ──────────────────────────────────────
     # Reps where best_rss is still inf had fewer than 3 unique x values in
-    # their resample (no interior candidates) — set their predictions to NaN
+    # their resample (no interior candidates) - set their predictions to NaN
     # so they are excluded from nanmean/nanstd, matching the loop path's
     # try/except → predictions[i] = NaN handling.
     no_winner = ~np.isfinite(best_rss)  # (n_reps,)
@@ -683,11 +632,6 @@ def _bootstrap_vectorized_cf(
         "pct_95": np.nanpercentile(predictions, 95, axis=0),
     }
     return predictions, summary
-
-
-# ---------------------------------------------------------------------------
-# Loop bootstrap (fallback for memory-guard and benchmarking)
-# ---------------------------------------------------------------------------
 
 
 def _bootstrap_loop_cf(
@@ -719,12 +663,12 @@ def _bootstrap_loop_cf(
     Returns
     -------
     predictions : ndarray, shape (n_reps, len(x_grid))
-    summary : dict — keys ``mean``, ``std``, ``cv``, ``pct_5``, ``pct_95``.
+    summary : dict - keys ``mean``, ``std``, ``cv``, ``pct_5``, ``pct_95``.
     """
     n = len(x)
     n_grid = len(x_grid)
 
-    # No replicates requested — return an empty predictions array and a summary
+    # No replicates requested - return an empty predictions array and a summary
     # filled with NaN/inf.  Avoids calling nanmean/nanstd on a (0, n_grid) array,
     # which would emit "Mean of empty slice" RuntimeWarnings.
     if n_reps == 0:

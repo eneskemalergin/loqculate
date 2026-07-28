@@ -47,10 +47,6 @@ from loqculate.config import (
 from loqculate.io import apply_multiplier, read_calibration_data, stream_csv_writer
 from loqculate.models import MODEL_REGISTRY
 
-# ---------------------------------------------------------------------------
-# Worker functions (module-level so ProcessPoolExecutor can pickle them)
-# ---------------------------------------------------------------------------
-
 
 def _process_chunk(
     x_sorted: np.ndarray,
@@ -104,11 +100,6 @@ def _loq_for_cli(model: object, *, cv_thresh: float, fast: bool) -> float:
     if np.isfinite(loq_val):
         return loq_val
     return float(model.loq(cv_thresh, method="bootstrap"))
-
-
-# ---------------------------------------------------------------------------
-# fit sub-command
-# ---------------------------------------------------------------------------
 
 
 def _run_fit(args: argparse.Namespace) -> None:
@@ -208,11 +199,6 @@ def _plot_one(row, x_s, y_s, peps_s, args):
         sys.stderr.write(f"Plot error for {pep}: {exc}\n")
 
 
-# ---------------------------------------------------------------------------
-# compare sub-command
-# ---------------------------------------------------------------------------
-
-
 def _run_compare(args: argparse.Namespace) -> None:
     from loqculate.models import MODEL_REGISTRY
     from loqculate.plotting import plot_model_comparison
@@ -259,12 +245,8 @@ def _run_compare(args: argparse.Namespace) -> None:
     sys.stdout.write(f"Comparison plots written to {output_dir}\n")
 
 
-# ---------------------------------------------------------------------------
-# Argument parser
-# ---------------------------------------------------------------------------
-
-
 def build_parser() -> argparse.ArgumentParser:
+    """Build the top-level ``loqculate`` argument parser with fit/compare subcommands."""
     _default_threads = max(1, (os.cpu_count() or 1) - 2)
 
     parser = argparse.ArgumentParser(
@@ -276,7 +258,6 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub = parser.add_subparsers(dest="command", required=True)
 
-    # ---- shared arguments ------------------------------------------------
     shared = argparse.ArgumentParser(add_help=False)
     shared.add_argument("curve_data", type=str, help="Quantitative data file")
     shared.add_argument(
@@ -309,7 +290,6 @@ def build_parser() -> argparse.ArgumentParser:
         "--n_threads", default=_default_threads, type=int, help="Worker processes (-1 = all CPUs)"
     )
 
-    # ---- fit -------------------------------------------------------------
     p_fit = sub.add_parser(
         "fit", parents=[shared], help="Fit a single model and write figuresofmerit.csv"
     )
@@ -336,7 +316,6 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
 
-    # ---- compare ---------------------------------------------------------
     p_cmp = sub.add_parser(
         "compare", parents=[shared], help="Run multiple models and generate overlay plots"
     )
@@ -351,6 +330,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
+    """Parse CLI arguments and dispatch the fit or compare subcommand."""
     parser = build_parser()
     args = parser.parse_args()
 

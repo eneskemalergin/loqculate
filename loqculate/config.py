@@ -1,5 +1,11 @@
-# Configuration constants for loqculate.
-# Centralizes every configurable value in one place.
+"""Configuration constants for loqculate.
+
+Centralizes defaults for LOD/LOQ thresholds, bootstrap size, grid density,
+weights, knot search, and CLI batching. Keep I/O and fitting policy out of
+this module.
+"""
+
+from __future__ import annotations
 
 DEFAULT_STD_MULT = 2  # multiplier of noise std for LOD
 DEFAULT_CV_THRESH = 0.2  # 20 % CV threshold for LOQ
