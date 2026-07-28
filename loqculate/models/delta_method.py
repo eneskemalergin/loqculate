@@ -109,8 +109,11 @@ def delta_cv_profile(
         return np.array([], dtype=float), np.array([], dtype=float)
 
     mse = linear_segment_mse(host)
-    cov = host.covariance()
-    if mse is None or cov is None:
+    if mse is None:
+        return np.array([], dtype=float), np.array([], dtype=float)
+
+    cov = host.covariance(mse=mse)
+    if cov is None:
         return np.array([], dtype=float), np.array([], dtype=float)
 
     n_lin = int(np.sum(np.asarray(host.x_, dtype=float) > float(host.params_["knot_x"])))

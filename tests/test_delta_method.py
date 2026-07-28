@@ -289,6 +289,22 @@ def test_missing_covariance_returns_inf_even_when_mse_defined() -> None:
         assert np.isinf(delta_loq(cf))
 
 
+def test_covariance_reuses_provided_mse() -> None:
+    """covariance(mse=...) matches default and scales with the supplied MSE."""
+    cf = _fit_piecewise_curve(noise_sd=0.5, seed=2)
+    mse = linear_segment_mse(cf)
+    cov_default = cf.covariance()
+    assert mse is not None and cov_default is not None
+
+    cov_reuse = cf.covariance(mse=mse)
+    assert cov_reuse is not None
+    np.testing.assert_allclose(cov_reuse, cov_default)
+
+    cov_half = cf.covariance(mse=0.5 * mse)
+    assert cov_half is not None
+    np.testing.assert_allclose(cov_half, 0.5 * cov_default)
+
+
 def test_infinite_lod_returns_inf_delta_loq() -> None:
     """Flat curve with infinite LOD yields infinite delta LOQ."""
     x = np.repeat([0.1, 1.0, 10.0], 6)

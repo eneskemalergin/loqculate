@@ -26,6 +26,7 @@ from loqculate.config import (
 )
 from loqculate.models.base import CalibrationModel
 from loqculate.models.delta_method import delta_loq as compute_delta_loq
+from loqculate.models.delta_method import linear_segment_mse
 from loqculate.utils.knot_search import _fit_and_constrain, find_knot
 from loqculate.utils.threshold import find_loq_threshold
 from loqculate.utils.weights import inverse_sqrt_weights
@@ -336,7 +337,7 @@ class PiecewiseCF(CalibrationModel):
     # covariance
     # ------------------------------------------------------------------
 
-    def covariance(self) -> Optional[np.ndarray]:
+    def covariance(self, *, mse: float | None = None) -> Optional[np.ndarray]:
         """Return the 2x2 parameter covariance matrix for the linear segment.
 
         Shape ``(2, 2)``::
@@ -351,48 +352,28 @@ class PiecewiseCF(CalibrationModel):
         distinct from ``np.std(ddof=1)`` used in :meth:`lod` which estimates
         a scalar standard deviation from noise observations.
 
-        Returns ``None`` when:
+        Parameters
+        ----------
+        mse:
+            Optional precomputed linear-segment MSE.  When omitted, computed
+            with :func:`~loqculate.models.delta_method.linear_segment_mse`.
 
-        - the model has not been fitted yet,
-        - ``slope == 0`` (constraint 1 clamped the linear segment to a
-          horizontal weighted mean; the 2-parameter model was never fit
-          and the Gram inverse is undefined), or
-        - fewer than three observations fall on the linear segment
-          (``x > knot_x``), so ``n_lin - 2`` would leave no residual degrees
-          of freedom.
+        Returns
+        -------
+        ndarray or None
+            The ``(2, 2)`` covariance, or ``None`` when the model is not
+            fitted, ``slope == 0`` (Gram inverse undefined), or fewer than
+            three observations fall on the linear segment (``x > knot_x``).
         """
         if not self.is_fitted_:
             return None
         if self._gram_inv is None:
             return None
-
-        # Residuals on the linear segment only (x > knot_x).
-        x = self.x_
-        y = self.y_
-        W = self.weights_**2
-        knot_x = self.params_["knot_x"]
-        a = self.params_["slope"]
-        b = self.params_["intercept_linear"]
-
-        lin_mask = x > knot_x
-        x_lin = x[lin_mask]
-        y_lin = y[lin_mask]
-        W_lin = W[lin_mask]
-        n_lin = int(np.sum(lin_mask))
-
-        # MSE divides by n_lin - 2; need at least one residual degree of freedom.
-        if n_lin < 3:
+        if mse is None:
+            mse = linear_segment_mse(self)
+        if mse is None:
             return None
-
-        residuals = y_lin - (a * x_lin + b)
-        # Weighted RSS for the linear segment.
-        wrss = float(np.sum(W_lin * residuals**2))
-        # Unbiased MSE: divide by (n_lin - 2) because we estimated 2 parameters
-        # (slope and intercept).  Analogous to dividing by (n-1) for a scalar
-        # std, but here the degrees-of-freedom penalty is the number of parameters.
-        mse = wrss / (n_lin - 2)
-
-        return mse * self._gram_inv
+        return float(mse) * self._gram_inv
 
     # ------------------------------------------------------------------
     # Private helpers
