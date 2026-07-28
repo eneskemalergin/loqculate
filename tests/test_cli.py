@@ -167,7 +167,7 @@ def test_without_fast_uses_bootstrap_loq() -> None:
 
 
 def test_fast_falls_back_to_bootstrap_when_delta_inf() -> None:
-    """--fast falls back to bootstrap when delta LOQ is infinite (H7)."""
+    """--fast falls back to bootstrap when delta LOQ is infinite."""
     x, y = _delta_inf_bootstrap_finite_arrays()
     peps = np.array(["P"] * len(x))
     kwargs = {"n_boot_reps": 100, "seed": 42}
