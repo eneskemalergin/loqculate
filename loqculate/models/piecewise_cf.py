@@ -301,10 +301,13 @@ class PiecewiseCF(CalibrationModel):
 
         Returns ``None`` when:
 
-        - the model has not been fitted yet, or
+        - the model has not been fitted yet,
         - ``slope == 0`` (constraint 1 clamped the linear segment to a
-          horizontal weighted mean — the 2-parameter model was never fit
-          and the Gram inverse is undefined).
+          horizontal weighted mean; the 2-parameter model was never fit
+          and the Gram inverse is undefined), or
+        - fewer than three observations fall on the linear segment
+          (``x > knot_x``), so ``n_lin - 2`` would leave no residual degrees
+          of freedom.
         """
         if not self.is_fitted_:
             return None
@@ -325,8 +328,8 @@ class PiecewiseCF(CalibrationModel):
         W_lin = W[lin_mask]
         n_lin = int(np.sum(lin_mask))
 
-        if n_lin < 2:
-            # Cannot compute ddof=1 MSE with fewer than 2 linear observations.
+        # MSE divides by n_lin - 2; need at least one residual degree of freedom.
+        if n_lin < 3:
             return None
 
         residuals = y_lin - (a * x_lin + b)

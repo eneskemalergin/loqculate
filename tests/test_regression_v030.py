@@ -497,8 +497,9 @@ class TestCovariance:
     """Tests for PiecewiseCF.covariance().
 
     The method returns the 2x2 parameter covariance matrix for the linear
-    segment: Cov = MSE_linear * _gram_inv where MSE uses ddof=2 (slope +
-    intercept).  Returns None for unfitted models or slope=0 models.
+    segment: Cov = MSE_linear * _gram_inv where MSE uses denominator
+    n_lin - 2.  Returns None for unfitted models, slope=0 models, or
+    fewer than three linear-segment observations.
     """
 
     def test_covariance_shape_and_type(self, reference_data):
@@ -623,6 +624,41 @@ class TestCovariance:
             "covariance() must return None when slope=0; "
             "the 2x2 Gram inverse does not correspond to the fitted model"
         )
+
+    def test_covariance_none_when_two_linear_points(self):
+        """Exactly two points above knot_x after fit: covariance() returns None.
+
+        This is the division-by-zero edge: Gram inverse is stored (slope > 0)
+        but MSE would divide by n_lin - 2 == 0.
+        """
+        x = np.concatenate([np.repeat([1.0, 2.0, 3.0], 8), np.array([4.0, 5.0])])
+        y = np.where(x <= 3.0, 10.0, 10.0 + 5.0 * (x - 3.0))
+        cf = PiecewiseCF(n_boot_reps=0, seed=42).fit(x, y)
+
+        kx = cf.params_["knot_x"]
+        assert cf.params_["slope"] > 0, "pre-condition: slope must be positive"
+        assert int(np.sum(cf.x_ > kx)) == 2, "pre-condition: exactly two linear points"
+
+        assert cf.covariance() is None
+
+    def test_covariance_ok_when_three_linear_points(self):
+        """Exactly three points above knot_x after fit: covariance() is a valid 2x2."""
+        x = np.concatenate([np.repeat([1.0, 2.0, 3.0], 5), np.array([4.0, 5.0, 6.0])])
+        y = np.where(x <= 3.0, 10.0, 10.0 + 5.0 * (x - 3.0))
+        cf = PiecewiseCF(n_boot_reps=0, seed=42).fit(x, y)
+
+        kx = cf.params_["knot_x"]
+        assert cf.params_["slope"] > 0, "pre-condition: slope must be positive"
+        assert int(np.sum(cf.x_ > kx)) == 3, "pre-condition: exactly three linear points"
+
+        cov = cf.covariance()
+        assert cov is not None
+        assert isinstance(cov, np.ndarray)
+        assert cov.shape == (2, 2)
+        assert np.isfinite(cov).all()
+        assert cov[0, 0] >= 0.0
+        assert cov[1, 1] >= 0.0
+        np.testing.assert_allclose(cov, cov.T, atol=1e-15)
 
 
 # ---------------------------------------------------------------------------
