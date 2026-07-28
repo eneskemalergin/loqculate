@@ -129,7 +129,6 @@ def delta_cv_profile(
     spacing = min_concentration_spacing(host.x_)
     half_band = kink_guard_factor * spacing
 
-    # Vectorized form of prediction_variance over the grid (same W0 and x'Σx).
     w0 = inverse_sqrt_weights(x_grid)
     W0 = w0**2
     cov = np.asarray(cov, dtype=float)

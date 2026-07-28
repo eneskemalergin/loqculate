@@ -343,12 +343,20 @@ def test_cv_profile_matches_scalar_prediction_variance() -> None:
 
 
 def test_cv_profile_does_not_call_scalar_prediction_variance() -> None:
-    """delta_cv_profile must not call prediction_variance once per grid point."""
+    """Grid path must not call prediction_variance or per-point weight helpers."""
     cf = _fit_piecewise_curve(noise_sd=0.5, seed=2)
-    with patch(
-        "loqculate.models.delta_method.prediction_variance",
-        side_effect=AssertionError("scalar prediction_variance called from CV grid"),
+    with (
+        patch(
+            "loqculate.models.delta_method.prediction_variance",
+            side_effect=AssertionError("scalar prediction_variance called from CV grid"),
+        ),
+        patch(
+            "loqculate.models.delta_method.inverse_sqrt_weights",
+            wraps=inverse_sqrt_weights,
+        ) as weights_mock,
     ):
         x_grid, cv = delta_cv_profile(cf, n_grid=100)
-    assert x_grid.size > 0
+    assert x_grid.size == 100
     assert np.any(np.isfinite(cv))
+    assert weights_mock.call_count == 1
+    assert np.asarray(weights_mock.call_args.args[0]).shape == (100,)
