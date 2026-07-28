@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import warnings
+from unittest.mock import patch
+
 import numpy as np
 import pytest
 
@@ -221,3 +224,94 @@ def test_loq_unknown_method_raises() -> None:
     cf = _fit_piecewise_curve()
     with pytest.raises(ValueError, match="bootstrap.*delta"):
         cf.loq(method="jackknife")
+
+
+def _fit_with_n_lin(n_lin: int) -> PiecewiseCF:
+    """Fit a curve whose linear segment has exactly ``n_lin`` observations.
+
+    Noise-floor and linear levels are spaced so knot FP roundoff cannot pull
+    floor concentrations into ``x > knot_x``.
+    """
+    if n_lin < 1:
+        raise ValueError("n_lin must be >= 1")
+    noise_x = np.repeat([0.1, 1.0], 12)
+    lin_x = 10.0 + 10.0 * np.arange(n_lin, dtype=float)
+    x = np.concatenate([noise_x, lin_x])
+    y = np.where(x <= 1.0, 5.0, 5.0 + (x - 1.0))
+    cf = PiecewiseCF(n_boot_reps=0, seed=42).fit(x, y)
+    assert int(np.sum(cf.x_ > cf.params_["knot_x"])) == n_lin
+    return cf
+
+
+def test_small_n_lin_warns_and_still_computes() -> None:
+    """3 <= n_L < 5 emits UserWarning and still computes a usable LOQ."""
+    for n_lin in (3, 4):
+        cf = _fit_with_n_lin(n_lin)
+        with pytest.warns(UserWarning, match="linear-segment points"):
+            loq = delta_loq(cf)
+        assert np.isfinite(loq), "thin linear segment must still compute, not refuse"
+
+
+def test_n_lin_at_least_five_does_not_warn() -> None:
+    """n_L >= 5 computes without the small-n UserWarning."""
+    cf = _fit_with_n_lin(5)
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always", UserWarning)
+        loq = delta_loq(cf)
+    small_n = [w for w in caught if "linear-segment points" in str(w.message)]
+    assert not small_n
+    assert np.isfinite(loq)
+
+
+def test_n_lin_below_three_does_not_warn() -> None:
+    """n_L < 3 returns inf without the small-n warning (path refuses to compute)."""
+    x = np.concatenate([np.repeat([1.0, 2.0, 3.0], 8), np.array([4.0, 5.0])])
+    y = np.where(x <= 3.0, 10.0, 10.0 + 5.0 * (x - 3.0))
+    cf = PiecewiseCF(n_boot_reps=0, seed=42).fit(x, y)
+    assert int(np.sum(cf.x_ > cf.params_["knot_x"])) == 2
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always", UserWarning)
+        loq = delta_loq(cf)
+    small_n = [w for w in caught if "linear-segment points" in str(w.message)]
+    assert not small_n
+    assert np.isinf(loq)
+
+
+def test_missing_covariance_returns_inf_even_when_mse_defined() -> None:
+    """None from covariance() yields inf LOQ even when MSE is defined."""
+    cf = _fit_piecewise_curve(noise_sd=0.5, seed=2)
+    assert linear_segment_mse(cf) is not None
+    assert np.isfinite(delta_loq(cf)), "pre-condition: healthy fit must yield finite delta LOQ"
+
+    with patch.object(cf, "covariance", return_value=None):
+        assert linear_segment_mse(cf) is not None
+        assert np.isinf(delta_loq(cf))
+
+
+def test_infinite_lod_returns_inf_delta_loq() -> None:
+    """Flat curve with infinite LOD yields infinite delta LOQ."""
+    x = np.repeat([0.1, 1.0, 10.0], 6)
+    y = np.full_like(x, 10.0)
+    cf = PiecewiseCF(n_boot_reps=0, seed=42).fit(x, y)
+    assert np.isinf(cf.lod())
+    assert np.isinf(delta_loq(cf))
+
+
+def test_zero_prediction_sets_cv_inf() -> None:
+    """Zero predicted signal sets CV to inf without divide-by-zero."""
+    cf = _fit_piecewise_curve(noise_sd=0.5, seed=2)
+    # Drive max(c, a*x+b) to zero on the grid while keeping a fitted cov/MSE path.
+    cf.params_["intercept_noise"] = 0.0
+    cf.params_["intercept_linear"] = -1.0e9
+
+    x_grid, cv = delta_cv_profile(cf, n_grid=50, lod=float(np.min(cf.x_)))
+    assert x_grid.size > 0
+    assert np.all(cf.predict(x_grid) == 0.0)
+    assert np.all(np.isinf(cv))
+
+
+def test_prediction_variance_clamps_negative() -> None:
+    """Negative raw prediction variance is clamped to zero before sqrt."""
+    cov = np.array([[-10.0, 0.0], [0.0, -10.0]])
+    assert prediction_variance(1.0, mse=0.0, cov=cov) == 0.0

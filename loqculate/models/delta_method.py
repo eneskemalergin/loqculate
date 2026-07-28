@@ -7,9 +7,14 @@ with :func:`~loqculate.utils.threshold.find_loq_threshold`.  Does not change
 The host must expose ``predict``, ``covariance``, ``lod``, ``weights_``,
 ``x_``, ``y_``, ``params_`` (slope, intercept_linear, intercept_noise, knot_x),
 and ``is_fitted_``.
+
+When ``3 <= n_L < 5``, emits ``UserWarning`` and still computes.  Missing
+weights raise; unavailable covariance or undefined MSE yield infinite LOQ.
 """
 
 from __future__ import annotations
+
+import warnings
 
 import numpy as np
 
@@ -93,7 +98,8 @@ def delta_cv_profile(
     """Return ``(x_grid, cv)`` from LOD to ``max(x)`` for the delta method.
 
     Points inside the kink band receive ``cv = inf``.  When the analytical
-    path is unavailable, both arrays are empty.
+    path is unavailable, both arrays are empty.  Warns when
+    ``3 <= n_L < 5``.
     """
     _require_fitted_weights(host)
 
@@ -106,6 +112,15 @@ def delta_cv_profile(
     cov = host.covariance()
     if mse is None or cov is None:
         return np.array([], dtype=float), np.array([], dtype=float)
+
+    n_lin = int(np.sum(np.asarray(host.x_, dtype=float) > float(host.params_["knot_x"])))
+    if 3 <= n_lin < 5:
+        warnings.warn(
+            f"Delta-method LOQ is based on only {n_lin} linear-segment points; "
+            "residual degrees of freedom are low (n_L - 2).",
+            UserWarning,
+            stacklevel=2,
+        )
 
     x_grid = np.linspace(lod_val, x_max, num=int(n_grid))
     y_hat = np.asarray(host.predict(x_grid), dtype=float)
