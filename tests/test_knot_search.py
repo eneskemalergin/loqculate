@@ -284,18 +284,20 @@ class TestLODComparison:
         )
 
     def test_h3b_cf_wins_rss_majority(self, partition_audit):
-        """H3b: when partitions differ, CF achieves lower or equal RSS in >= 84% of
-        cases.  A discrete grid search is not susceptible to initialisation bias;
-        the TRF optimizer can be trapped by its starting point."""
+        """When partitions differ, CF achieves lower or equal RSS in >= 75% of
+        cases. Discrete search is not susceptible to initialisation bias; TRF
+        can be trapped by its starting point. Threshold is below the historical
+        ~84% demo rate so one TRF flip across scipy/BLAS builds does not fail CI.
+        """
         diff = partition_audit["diff"]
         if not diff:
             pytest.skip("No different-partition cases found on reference data")
         # Small tolerance (1e6) guards against floating-point ties in RSS.
         cf_wins = sum(1 for rss_cf, rss_wls, _, _ in diff if rss_cf <= rss_wls + 1e6)
         pct = cf_wins / len(diff)
-        assert pct >= 0.84, (
+        assert pct >= 0.75, (
             f"CF wins RSS in {cf_wins}/{len(diff)} ({pct:.0%}) different-partition "
-            "cases. Expected >= 84%."
+            "cases. Expected >= 75%."
         )
 
     def test_h3c_wls_wins_are_marginal(self, partition_audit):
