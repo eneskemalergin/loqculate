@@ -101,6 +101,10 @@ def _initialize_params(x: np.ndarray, y: np.ndarray, weights: np.ndarray):
 class PiecewiseWLS(CalibrationModel):
     """Pino 2020 piecewise WLS model, reimplemented with scipy TRF optimization.
 
+    Fits ``y = max(c, a*x + b)`` with observation weights ``1/sqrt(x)``.
+    Constant-area inputs (peak-to-peak zero) skip TRF and store a flat model
+    (``a = 0``, both intercepts at the constant level) so LOD is infinite.
+
     Key improvements over the original implementation
     --------------------------------------------------
     * ``scipy.optimize.curve_fit`` (TRF) replaces ``lmfit`` Levenberg-Marquardt.
@@ -188,6 +192,23 @@ class PiecewiseWLS(CalibrationModel):
         else:
             w = np.asarray(weights, dtype=float)
         self.weights_ = w
+
+        # Constant response: no concentration-dependent signal. Skip TRF; a tiny
+        # positive slope from the optimizer is platform-dependent garbage and can
+        # yield a finite LOD on all-zero / flat curves (seen on arm64).
+        if np.ptp(y) == 0.0:
+            level = float(y[0]) if len(y) else 0.0
+            self.params_ = {
+                "slope": 0.0,
+                "intercept_linear": level,
+                "intercept_noise": level,
+            }
+            self.is_fitted_ = True
+            self._lod_cache = {}
+            self._loq_cache = {}
+            self._boot_summary = None
+            self._x_grid = None
+            return self
 
         # Initial parameter guesses
         if self.init_method == "legacy":

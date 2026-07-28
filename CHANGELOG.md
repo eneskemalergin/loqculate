@@ -40,6 +40,7 @@ On the demo 27-peptide set (`PiecewiseCF`, $B=200$, seed 42), measured LOQ-only 
 - **`PiecewiseCF.covariance()`** returns `None` when $n_{L} < 3$, avoiding division by zero in the residual MSE ($n_{L}-2$).
 - **`find_loq_threshold`** returns infinite LOQ for `window < 1` instead of raising inside the window scan.
 - Project URLs in `pyproject.toml` point at the current GitHub repository.
+- **`PiecewiseWLS.fit()`** treats constant-area curves (including all zeros) as flat: slope 0 and infinite LOD. Avoids a platform-dependent tiny TRF slope that produced a finite LOD on arm64.
 
 ---
 

@@ -27,6 +27,17 @@ def test_all_zero_does_not_hang(edge_case):
 
     model = PiecewiseWLS(n_boot_reps=10)
     model.fit(x, y)
+    assert model.params_["slope"] == 0.0
+    assert model.lod() == np.inf
+
+
+def test_constant_area_fit_is_flat():
+    """Constant (nonzero) areas are also no-signal: slope 0, LOD infinite."""
+    x = np.array([0.0, 1.0, 10.0, 100.0, 0.0, 1.0, 10.0, 100.0])
+    y = np.full_like(x, 42.0)
+    model = PiecewiseWLS(n_boot_reps=0).fit(x, y)
+    assert model.params_["slope"] == 0.0
+    assert model.params_["intercept_noise"] == 42.0
     assert model.lod() == np.inf
 
 
