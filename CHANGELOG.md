@@ -23,6 +23,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 - Wiki pages in `wiki/`.
 - `CITATION.cff`.
+- Version tags build GitHub Release notes from this changelog.
 
 ### Removed
 

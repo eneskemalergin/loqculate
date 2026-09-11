@@ -1,0 +1,87 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validate release metadata
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Validate tag, package version, and source commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="$GITHUB_REF_NAME"
+          [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
+            echo "release tag must have the form vX.Y.Z: $tag" >&2
+            exit 1
+          }
+          version="${tag#v}"
+          package_version="$(sed -n 's/^version = "\([^"]*\)"/\1/p' pyproject.toml | head -n1)"
+          [[ "$package_version" == "$version" ]] || {
+            echo "tag version $version does not match pyproject.toml version $package_version" >&2
+            exit 1
+          }
+
+          git fetch --no-tags origin main
+          main_sha="$(git rev-parse origin/main)"
+          [[ "$GITHUB_SHA" == "$main_sha" ]] || {
+            echo "release tag must point at current main: tag=$GITHUB_SHA main=$main_sha" >&2
+            exit 1
+          }
+
+      - name: Validate release changelog section
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash .github/scripts/changelog_section.sh CHANGELOG.md "${GITHUB_REF_NAME#v}" > "$RUNNER_TEMP/release-notes.md"
+          test -s "$RUNNER_TEMP/release-notes.md"
+
+  publish:
+    name: Create GitHub Release
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Extract release notes
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash .github/scripts/changelog_section.sh CHANGELOG.md "${GITHUB_REF_NAME#v}" > release-notes.md
+          test -s release-notes.md
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="$GITHUB_REF_NAME"
+          gh release create "$tag" \
+            --verify-tag \
+            --title "loqculate $tag" \
+            --notes-file release-notes.md
