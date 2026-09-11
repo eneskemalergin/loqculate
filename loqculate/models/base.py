@@ -7,7 +7,7 @@ from loqculate.config import DEFAULT_CV_THRESH, DEFAULT_STD_MULT
 
 
 class CalibrationModel(ABC):
-    """Abstract contract that every calibration model must satisfy.
+    """Required methods every calibration model implements.
 
     Design notes
     ------------

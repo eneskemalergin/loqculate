@@ -1,48 +1,28 @@
-# Python artifacts
+# Python
 __pycache__/
 *.py[cod]
-*$py.class
-*.pyo
-*.pyd
-
-# Virtual environments
-venv/
-.venv/
-.env/
-
-# Byte-compiled / optimized / DLL files
-*.py[co]
-
-# Distribution / packaging
+*.egg-info/
+.eggs/
 build/
 dist/
-.eggs/
-*.egg-info/
-.installed.cfg
-*.egg
 
-# Test output
+# Environments
+.venv/
+venv/
+.env/
+
+# Tools
 .coverage
-.cache
-nosetests.xml
+.pytest_cache/
+.ruff_cache/
+htmlcov/
 coverage.xml
-*,cover
 
-# MacOS
+# OS / editor
 .DS_Store
-
-# Logs and temporary files
-*.log
-*.tmp
-
-# Notebook checkpoints
 .ipynb_checkpoints/
 
-
-# Project directories
-**/plan/
-**/ref/
-**/refs/
+# Local
+plan/
 tmp/
-*/tmp/
-*/temp/
+*.log

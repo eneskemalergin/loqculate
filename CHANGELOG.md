@@ -7,6 +7,35 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [Unreleased]
+
+---
+
+## [0.4.1] - 2026-09-11
+
+Docs, install, and repository layout. LOD and LOQ estimators are unchanged from 0.4.0. A source checkout installs with uv. The README is the short path to a first `fit`; the wiki has the rest. Runtime install no longer includes `lmfit`.
+
+### Added
+
+- **Wiki** in `wiki/`: installation, getting started, CLI, Python API, input formats, benchmarks, troubleshooting, and one page per calibration model.
+- **`CITATION.cff`** for citing this software next to the Pino 2020 paper.
+- **GitHub Releases** on `vX.Y.Z` tags. Notes are this changelog section.
+
+### Changed
+
+- Package version is 0.4.1.
+- **README** is install, one demo `fit`, wiki links, and citation. CI and coverage badges are live shields. Status stays `alpha`.
+- **Install** is `uv sync` on Python 3.12 locally. The package still supports 3.10-3.12. `uv sync --extra legacy` adds `lmfit` only if you run `old/calculate-loq.py`.
+- **CLI `--model` help** names the discrete knot search. It does not call that search globally optimal.
+- **Pull requests** go to `dev`. `main` is the last release. CI runs on those branches, other branches, and pull requests.
+
+### Removed
+
+- `requirements.txt`, `requirements-dev.txt`, and `pytest.ini`. Dependencies and pytest config are in `pyproject.toml` with `uv.lock`.
+- `Makefile` and pre-commit hooks. Ruff and pytest run through `uv run` and CI.
+
+---
+
 ## [0.4.0] - 2026-07-28
 
 Opt-in delta-method LOQ for `PiecewiseCF`: an analytical prediction-variance CV path beside the existing bootstrap default. Use `loq(method="delta")` / `loq_delta()` in Python, or `loqculate fit --fast` on the CLI (delta first; bootstrap once if delta LOQ is infinite). Default `loq()` and `summary()["loq"]` stay bootstrap. Delta and bootstrap are different estimators and can disagree; `--fast` is CF-only; LOD/knot uncertainty is not propagated into the analytical point estimate.
