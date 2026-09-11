@@ -13,10 +13,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 - A `vX.Y.Z` tag runs the same CI workflow before it creates a GitHub Release. Lint or test failure stops the release.
 - Linux 3.12 CI still prints a coverage report. It does not upload to Codecov.
+- Dependabot is one monthly PR into `dev`, grouping `uv` and GitHub Actions. Not one PR per package.
 
 ### Removed
 
-- Dependabot version-update PRs. One parsed config opened a PR per package against `dev`.
 - Codecov badge. Nothing was reaching Codecov; `main` is a protected branch and uploads need a token.
 
 ---
