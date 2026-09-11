@@ -39,7 +39,9 @@ loqculate = "loqculate.cli:main"
 
 [project.urls]
 Repository = "https://github.com/eneskemalergin/loqculate"
+Documentation = "https://github.com/eneskemalergin/loqculate/wiki"
 "Bug Tracker" = "https://github.com/eneskemalergin/loqculate/issues"
+Changelog = "https://github.com/eneskemalergin/loqculate/blob/main/CHANGELOG.md"
 
 [dependency-groups]
 dev = [
