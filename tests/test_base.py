@@ -1,4 +1,4 @@
-"""Base class contract tests: every model must satisfy these."""
+"""Base class tests: every model must implement these methods."""
 
 import numpy as np
 import pytest

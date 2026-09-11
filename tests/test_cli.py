@@ -1,4 +1,4 @@
-"""CLI contract tests for --fast and LOQ routing."""
+"""CLI tests for --fast and LOQ routing."""
 
 from __future__ import annotations
 
