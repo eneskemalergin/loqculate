@@ -9,25 +9,29 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-### Changed
+---
 
-- `--model` help no longer calls the knot search globally optimal.
-- README is shorter: install, one demo command, wiki index, citation. Model math, flags, and timings are on the wiki.
-- README badges use live GitHub Actions and Codecov shields (`flat-square`). Status is `alpha`, matching `pyproject.toml`.
-- Each calibration model has its own wiki page. `wiki/Models.md` is the comparison index.
-- Source checkout and CI use uv. Local Python is 3.12 (`.python-version`). The package still supports 3.10-3.12.
-- Runtime install no longer pulls `lmfit`. `loqculate/` never imported it. Use `uv sync --extra legacy` to run `old/calculate-loq.py`.
-- Pull requests target `dev`. `main` is the last release. CI runs on those branches, other branches, and pull requests.
+## [0.4.1] - 2026-09-11
+
+Docs, install, and repository layout. LOD and LOQ estimators are unchanged from 0.4.0. A source checkout installs with uv. The README is the short path to a first `fit`; the wiki has the rest. Runtime install no longer includes `lmfit`.
 
 ### Added
 
-- Wiki pages in `wiki/`.
-- `CITATION.cff`.
-- Version tags build GitHub Release notes from this changelog.
+- **Wiki** in `wiki/`: installation, getting started, CLI, Python API, input formats, benchmarks, troubleshooting, and one page per calibration model.
+- **`CITATION.cff`** for citing this software next to the Pino 2020 paper.
+- **GitHub Releases** on `vX.Y.Z` tags. Notes are this changelog section.
+
+### Changed
+
+- Package version is 0.4.1.
+- **README** is install, one demo `fit`, wiki links, and citation. CI and coverage badges are live shields. Status stays `alpha`.
+- **Install** is `uv sync` on Python 3.12 locally. The package still supports 3.10-3.12. `uv sync --extra legacy` adds `lmfit` only if you run `old/calculate-loq.py`.
+- **CLI `--model` help** names the discrete knot search. It does not call that search globally optimal.
+- **Pull requests** go to `dev`. `main` is the last release. CI runs on those branches, other branches, and pull requests.
 
 ### Removed
 
-- `requirements.txt`, `requirements-dev.txt`, and `pytest.ini`. Dependencies and pytest config live in `pyproject.toml` with `uv.lock`.
+- `requirements.txt`, `requirements-dev.txt`, and `pytest.ini`. Dependencies and pytest config are in `pyproject.toml` with `uv.lock`.
 - `Makefile` and pre-commit hooks. Ruff and pytest run through `uv run` and CI.
 
 ---

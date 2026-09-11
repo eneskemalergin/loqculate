@@ -1,8 +1,8 @@
 cff-version: 1.2.0
 message: "If you use loqculate in your work, please cite it as below. Also cite the original Pino 2020 method paper."
 title: "loqculate: Limit of Detection and Quantitation calculator for mass-spectrometry calibration curves"
-version: 0.4.0
-date-released: 2026-07-28
+version: 0.4.1
+date-released: 2026-09-11
 license: MIT
 repository-code: "https://github.com/eneskemalergin/loqculate"
 authors:

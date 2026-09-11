@@ -1,6 +1,6 @@
 # loqculate
 
-This wiki documents loqculate v0.4.0. Run `loqculate --version` before following version-specific behavior.
+This wiki documents loqculate v0.4.1. Run `loqculate --version` before following version-specific behavior.
 
 loqculate reads a calibration export, joins run filenames to concentrations, fits one model per peptide, and writes LOD, LOQ, and optional plots. The default model is [PiecewiseCF](PiecewiseCF). Default LOQ is bootstrap.
 
