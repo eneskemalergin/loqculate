@@ -12,7 +12,6 @@
   <img src="https://img.shields.io/badge/version-0.4.1-8B5CF6?style=flat-square" alt="v0.4.1">
   <img src="https://img.shields.io/badge/status-alpha-C17D10?style=flat-square" alt="Alpha">
   <a href="https://github.com/eneskemalergin/loqculate/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/eneskemalergin/loqculate/ci.yml?branch=main&style=flat-square&logo=github&label=CI" alt="CI"></a>
-  <a href="https://codecov.io/gh/eneskemalergin/loqculate"><img src="https://img.shields.io/codecov/c/github/eneskemalergin/loqculate?branch=main&style=flat-square&logo=codecov&logoColor=white" alt="Coverage"></a>
   <img src="https://img.shields.io/badge/license-MIT-4B9D6E?style=flat-square" alt="MIT">
 </p>
 

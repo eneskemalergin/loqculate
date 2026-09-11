@@ -13,8 +13,13 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  ci:
+    name: CI
+    uses: ./.github/workflows/ci.yml
+
   validate:
     name: Validate release metadata
+    needs: ci
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
@@ -56,7 +61,7 @@ jobs:
 
   publish:
     name: Create GitHub Release
-    needs: validate
+    needs: [ci, validate]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:

@@ -9,10 +9,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-### Fixed
+### Changed
 
-- Dependabot config. Grouped updates were missing `patterns`, so GitHub failed `.github/dependabot.yml` on `main` after a green `dev` PR. Monthly `uv` and Actions updates still open against `dev`.
-- Codecov upload from the Linux 3.12 job. The action had no OIDC token, so coverage never reached Codecov and the badge stayed unknown.
+- A `vX.Y.Z` tag runs the same CI workflow before it creates a GitHub Release. Lint or test failure stops the release.
+- Linux 3.12 CI still prints a coverage report. It does not upload to Codecov.
+
+### Removed
+
+- Dependabot version-update PRs. One parsed config opened a PR per package against `dev`.
+- Codecov badge. Nothing was reaching Codecov; `main` is a protected branch and uploads need a token.
 
 ---
 
