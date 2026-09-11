@@ -12,9 +12,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ### Changed
 
 - `--model` help no longer calls the knot search globally optimal.
+- README is shorter: install, one demo command, wiki index, citation. Model math, flags, and timings are on the wiki.
+- README badges use live GitHub Actions and Codecov shields (`flat-square`). Status is `alpha`, matching `pyproject.toml`.
+- Each calibration model has its own wiki page. `wiki/Models.md` is the comparison index.
 - Source checkout and CI use uv. Local Python is 3.12 (`.python-version`). The package still supports 3.10-3.12.
 - Runtime install no longer pulls `lmfit`. `loqculate/` never imported it. Use `uv sync --extra legacy` to run `old/calculate-loq.py`.
 - Pull requests target `dev`. `main` is the last release. CI runs on those branches, other branches, and pull requests.
+
+### Added
+
+- Wiki pages in `wiki/`.
+- `CITATION.cff`.
 
 ### Removed
 

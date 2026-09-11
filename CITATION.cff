@@ -1,0 +1,25 @@
+cff-version: 1.2.0
+message: "If you use loqculate in your work, please cite it as below. Also cite the original Pino 2020 method paper."
+title: "loqculate: Limit of Detection and Quantitation calculator for mass-spectrometry calibration curves"
+version: 0.4.0
+date-released: 2026-07-28
+license: MIT
+repository-code: "https://github.com/eneskemalergin/loqculate"
+authors:
+  - family-names: Ergin
+    given-names: Enes Kemal
+    orcid: "https://orcid.org/0000-0001-9810-7399"
+keywords:
+  - proteomics
+  - mass spectrometry
+  - LOD
+  - LOQ
+  - calibration
+  - quantitation
+abstract: >
+  loqculate estimates limits of detection and quantitation from
+  mass-spectrometry calibration curves. It reads common DIA and targeted
+  export formats, fits per-peptide models, and writes LOD, LOQ, and
+  optional plots. The default model is a closed-form piecewise fit
+  (PiecewiseCF). Bootstrap LOQ is the default; an opt-in delta-method
+  path is available for PiecewiseCF.

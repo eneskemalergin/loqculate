@@ -1,0 +1,66 @@
+name: Wiki
+
+on:
+  pull_request:
+    branches: [main, dev]
+    paths:
+      - "wiki/**"
+      - ".github/scripts/wiki_check.py"
+      - ".github/scripts/wiki_publish.sh"
+      - ".github/workflows/wiki-sync.yml"
+  push:
+    branches: [main, dev]
+    paths:
+      - "wiki/**"
+      - ".github/scripts/wiki_check.py"
+      - ".github/scripts/wiki_publish.sh"
+      - ".github/workflows/wiki-sync.yml"
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish the selected main-branch wiki after validation
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: wiki-sync-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validate wiki source
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Check wiki structure and links
+        run: python3 .github/scripts/wiki_check.py wiki
+
+  publish:
+    name: Publish GitHub Wiki
+    needs: validate
+    if: >-
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'workflow_dispatch' && inputs.publish == true && github.ref == 'refs/heads/main')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Mirror wiki source to the GitHub Wiki repository
+        env:
+          WIKI_TOKEN: ${{ secrets.WIKI_TOKEN || secrets.GITHUB_TOKEN }}
+        run: .github/scripts/wiki_publish.sh wiki
