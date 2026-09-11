@@ -9,6 +9,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Dependabot config. Grouped updates were missing `patterns`, so GitHub failed `.github/dependabot.yml` on `main` after a green `dev` PR. Monthly `uv` and Actions updates still open against `dev`.
+- Codecov upload from the Linux 3.12 job. The action had no OIDC token, so coverage never reached Codecov and the badge stayed unknown.
+
 ---
 
 ## [0.4.1] - 2026-09-11

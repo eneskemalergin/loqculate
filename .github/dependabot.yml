@@ -1,17 +1,14 @@
 version: 2
 
-multi-ecosystem-groups:
-  monthly-dependencies:
-    schedule:
-      interval: monthly
-
 updates:
   - package-ecosystem: uv
     directory: /
     target-branch: dev
-    multi-ecosystem-group: monthly-dependencies
+    schedule:
+      interval: monthly
 
   - package-ecosystem: github-actions
     directory: /
     target-branch: dev
-    multi-ecosystem-group: monthly-dependencies
+    schedule:
+      interval: monthly
