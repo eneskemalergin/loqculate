@@ -262,8 +262,7 @@ class TestLODComparison:
       H3b -- different partition: CF achieves lower-or-equal RSS in >= 84% of cases.
       H3c -- WLS-wins are marginal: when WLS achieves lower RSS, the margin is < 1%.
 
-    Empirically validated on the 27-peptide reference dataset; findings documented
-    in ``plan/v0.3.0-dev.md`` (Partition Audit section).
+    Empirically validated on the 27-peptide reference dataset.
     """
 
     def test_h3a_same_partition_lod_agreement(self, partition_audit):

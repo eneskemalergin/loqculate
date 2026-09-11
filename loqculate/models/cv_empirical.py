@@ -42,7 +42,7 @@ class EmpiricalCV(CalibrationModel):
     each concentration level, computes CV = std/mean, and applies the same
     sliding-window threshold search used by :class:`PiecewiseCF` and :class:`PiecewiseWLS`.
 
-    It is a reimplementation of the original ``loq_by_cv.py`` in the base-class contract.
+    It is a reimplementation of the original ``loq_by_cv.py`` on ``CalibrationModel``.
 
     Parameters
     ----------

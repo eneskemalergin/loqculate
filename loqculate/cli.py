@@ -299,11 +299,11 @@ def build_parser() -> argparse.ArgumentParser:
         choices=list(MODEL_REGISTRY.keys()),
         help=(
             "Calibration model. "
-            "piecewise_cf (default): closed-form knot search, globally optimal, no convergence failures. "
-            "piecewise_wls: TRF optimizer via scipy curve_fit, identical statistical model. "
-            "cv_empirical: non-parametric CV profile, no LOD. "
-            "original_wls: v0.2.2 implementation (compat). "
-            "original_cv: v0.2.2 CV implementation (compat)."
+            "piecewise_cf (default): discrete knot search, closed-form WLS. "
+            "piecewise_wls: same mean function, scipy TRF. "
+            "cv_empirical: replicate CVs, no LOD. "
+            "original_wls: Pino 2020 WLS port. "
+            "original_cv: Pino 2020 CV port."
         ),
     )
     p_fit.add_argument(

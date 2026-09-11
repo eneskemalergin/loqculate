@@ -7,6 +7,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [Unreleased]
+
+### Changed
+
+- `--model` help no longer calls the knot search globally optimal.
+
+---
+
 ## [0.4.0] - 2026-07-28
 
 Opt-in delta-method LOQ for `PiecewiseCF`: an analytical prediction-variance CV path beside the existing bootstrap default. Use `loq(method="delta")` / `loq_delta()` in Python, or `loqculate fit --fast` on the CLI (delta first; bootstrap once if delta LOQ is infinite). Default `loq()` and `summary()["loq"]` stay bootstrap. Delta and bootstrap are different estimators and can disagree; `--fast` is CF-only; LOD/knot uncertainty is not propagated into the analytical point estimate.
