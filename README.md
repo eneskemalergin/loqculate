@@ -9,7 +9,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/python-3.10--3.12-2D7D46?style=flat-square&logo=python&logoColor=white" alt="Python 3.10-3.12">
-  <img src="https://img.shields.io/badge/version-0.4.0-8B5CF6?style=flat-square" alt="v0.4.0">
+  <img src="https://img.shields.io/badge/version-0.4.1-8B5CF6?style=flat-square" alt="v0.4.1">
   <img src="https://img.shields.io/badge/status-alpha-C17D10?style=flat-square" alt="Alpha">
   <a href="https://github.com/eneskemalergin/loqculate/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/eneskemalergin/loqculate/ci.yml?branch=main&style=flat-square&logo=github&label=CI" alt="CI"></a>
   <a href="https://codecov.io/gh/eneskemalergin/loqculate"><img src="https://img.shields.io/codecov/c/github/eneskemalergin/loqculate?branch=main&style=flat-square&logo=codecov&logoColor=white" alt="Coverage"></a>
@@ -61,7 +61,7 @@ If you use loqculate, cite the Pino 2020 method and this software:
   title     = {loqculate: Limit of Detection and Quantitation calculator
                for mass-spectrometry calibration curves},
   year      = {2026},
-  version   = {0.4.0},
+  version   = {0.4.1},
   url       = {https://github.com/eneskemalergin/loqculate},
   license   = {MIT},
 }

@@ -1,6 +1,6 @@
 # CLI reference
 
-loqculate v0.4.0. Subcommands: `fit`, `compare`. Both take `curve_data` then `filename_concentration_map`.
+loqculate v0.4.1. Subcommands: `fit`, `compare`. Both take `curve_data` then `filename_concentration_map`.
 
 ```bash
 loqculate --version

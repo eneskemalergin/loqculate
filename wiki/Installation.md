@@ -1,6 +1,6 @@
 # Installation
 
-loqculate v0.4.0 supports Python 3.10-3.12. Local setup is [uv](https://docs.astral.sh/uv/) on 3.12 (`.python-version`). Not on PyPI.
+loqculate v0.4.1 supports Python 3.10-3.12. Local setup is [uv](https://docs.astral.sh/uv/) on 3.12 (`.python-version`). Not on PyPI.
 
 ```bash
 git clone https://github.com/eneskemalergin/loqculate
