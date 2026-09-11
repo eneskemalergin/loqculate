@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68", "wheel"]
+requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -7,7 +7,7 @@ name = "loqculate"
 version = "0.4.0"
 description = "Limit of Detection and Quantitation calculator for mass-spectrometry calibration curves"
 readme = "README.md"
-license = { text = "MIT" }
+license = { file = "LICENSE" }
 authors = [{ name = "Enes Kemal Ergin" }]
 keywords = ["proteomics", "mass-spectrometry", "LOQ", "LOD", "calibration", "quantitation"]
 classifiers = [
@@ -27,15 +27,11 @@ dependencies = [
     "pandas>=2.0",
     "matplotlib>=3.7",
     "tqdm>=4.64",
-    "lmfit>=1.2",
 ]
 
 [project.optional-dependencies]
-dev = [
-    "pytest>=7.4",
-    "pytest-cov>=4.1",
-    "ruff>=0.3",
-    "pre-commit>=3.6",
+legacy = [
+    "lmfit>=1.2",
 ]
 
 [project.scripts]
@@ -44,6 +40,13 @@ loqculate = "loqculate.cli:main"
 [project.urls]
 Repository = "https://github.com/eneskemalergin/loqculate"
 "Bug Tracker" = "https://github.com/eneskemalergin/loqculate/issues"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=5.0",
+    "ruff>=0.9",
+]
 
 [tool.setuptools.packages.find]
 where = ["."]
@@ -55,6 +58,7 @@ loqculate = ["py.typed"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+addopts = "--tb=short"
 
 [tool.ruff]
 line-length = 100
